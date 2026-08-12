@@ -19,6 +19,7 @@ spec:
     spec:
       containers:
         - name: fastapi
+
           image: data_engineering_portfolio-fastapi:latest
           imagePullPolicy: Never
 
@@ -28,3 +29,61 @@ spec:
           env:
             - name: PYTHONUNBUFFERED
               value: "1"
+
+            - name: MODEL_PATH
+              value: "/app/model_artifacts/linear_regression_model.pkl"
+
+            - name: SCALER_PATH
+              value: "/app/model_artifacts/scaler.pkl"
+
+            - name: MODEL_METRICS_PATH
+              value: "/app/model_artifacts/model_metrics.json"
+
+            - name: FEATURE_FILE
+              value: "/app/data/w7_features_final.parquet"
+
+            - name: PREDICTION_FILE
+              value: "/app/data/weather_predictions.csv"
+
+          volumeMounts:
+            - name: model-artifacts
+              mountPath: /app/model_artifacts
+              readOnly: true
+
+            - name: feature-data
+              mountPath: /app/data/w7_features_final.parquet
+              readOnly: true
+
+            - name: prediction-data
+              mountPath: /app/data/weather_predictions.csv
+              readOnly: true
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+
+      volumes:
+        - name: model-artifacts
+          hostPath:
+            path: /Users/gaurav/Documents/Projects/data_engineering_portfolio/w8_weather_prediction_model/models
+            type: Directory
+
+        - name: feature-data
+          hostPath:
+            path: /Users/gaurav/Documents/Projects/data_engineering_portfolio/w7_feature_engineering/data/processed/w7_features_final.parquet
+            type: File
+
+        - name: prediction-data
+          hostPath:
+            path: /Users/gaurav/Documents/Projects/data_engineering_portfolio/w9_ml_pipeline/data/predictions/weather_predictions.csv
+            type: File
