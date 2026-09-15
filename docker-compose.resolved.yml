@@ -40,7 +40,7 @@ services:
       timeout: 10s
       interval: 30s
       retries: 5
-    image: airflow-custom:latest
+    image: weather-prediction:local
     networks:
       default: null
     ports:
@@ -148,7 +148,7 @@ services:
       timeout: 10s
       interval: 30s
       retries: 5
-    image: airflow-custom:latest
+    image: weather-prediction:local
     networks:
       default: null
     restart: always
@@ -256,7 +256,7 @@ services:
       PYTHONPATH: /opt/airflow
       W2_DATA_FILE: /opt/airflow/w2/data/processed/weather_ready_for_postgres.csv
       W7_FEATURE_DATA_PATH: /opt/airflow/w7/data/processed/w7_features_final.parquet
-    image: airflow-custom:latest
+    image: weather-prediction:local
     networks:
       default: null
     restart: "no"
@@ -356,7 +356,7 @@ services:
       test:
         - CMD-SHELL
         - airflow jobs check --job-type SchedulerJob --hostname $$HOSTNAME
-    image: airflow-custom:latest
+    image: weather-prediction:local
     networks:
       default: null
     restart: always
@@ -599,7 +599,7 @@ x-airflow-common:
     PYTHONPATH: /opt/airflow
     W2_DATA_FILE: /opt/airflow/w2/data/processed/weather_ready_for_postgres.csv
     W7_FEATURE_DATA_PATH: /opt/airflow/w7/data/processed/w7_features_final.parquet
-  image: airflow-custom:latest
+  image: weather-prediction:local
   volumes:
     - ./w4_airflow_weather_pipeline/dags:/opt/airflow/dags
     - ./w4_airflow_weather_pipeline/src:/opt/airflow/src
