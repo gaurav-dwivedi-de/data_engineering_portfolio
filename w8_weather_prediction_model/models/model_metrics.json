@@ -1,8 +1,8 @@
 {
     "model_name": "Linear Regression",
-    "r2": 0.993,
-    "rmse": 0.5383,
-    "mae": 0.3789,
-    "training_rows": 44784,
-    "trained_at": "14 Sep 2026 01:30"
+    "r2": 0.9932,
+    "rmse": 0.5259,
+    "mae": 0.3764,
+    "training_rows": 44856,
+    "trained_at": "15 Sep 2026 01:04"
 }
