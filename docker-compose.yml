@@ -2,7 +2,7 @@ x-airflow-common: &airflow-common
   build:
     context: .
     dockerfile: Dockerfile
-  image: airflow-custom:latest
+  image: weather-prediction:local
 
   env_file:
     - .env
@@ -191,7 +191,7 @@ services:
     restart: always
 
   dashboard:
-    image: airflow-custom:latest
+    image: weather-prediction:local
 
     container_name: weather-dashboard-w6
 
@@ -220,7 +220,7 @@ services:
 
   fastapi:
 
-    image: airflow-custom:latest
+    image: weather-prediction:local
 
     container_name: weather-fastapi-w10
 
@@ -257,7 +257,7 @@ services:
 
   prediction-dashboard:
 
-    image: airflow-custom:latest
+    image: weather-prediction:local
 
     container_name: weather-prediction-dashboard-w10
 
