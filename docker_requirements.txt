@@ -6,6 +6,8 @@ pyspark
 plotly
 dash
 pyarrow #Reading/writing Parquet
+dash-bootstrap-components
+dash-iconify
 
 # Machine Learning
 scikit-learn

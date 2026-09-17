@@ -22,13 +22,42 @@ from dashboard.prediction_loader import (
     filter_prediction_data,
 )
 
-# Load dashboard datasets
+
+# ============================================================
+# Plotly Dark Theme
+# ============================================================
+
+DARK_PLOT_LAYOUT = {
+    "paper_bgcolor": "#0b1b2d",
+    "plot_bgcolor": "#0b1b2d",
+    "font": {
+        "color": "#e8f1ff",
+    },
+    "xaxis": {
+        "gridcolor": "rgba(120, 180, 255, 0.10)",
+        "linecolor": "rgba(120, 180, 255, 0.20)",
+        "zerolinecolor": "rgba(120, 180, 255, 0.15)",
+    },
+    "yaxis": {
+        "gridcolor": "rgba(120, 180, 255, 0.10)",
+        "linecolor": "rgba(120, 180, 255, 0.20)",
+        "zerolinecolor": "rgba(120, 180, 255, 0.15)",
+    },
+}
+
+
+# ============================================================
+# Load Dashboard Datasets
+# ============================================================
 
 FEATURE_DATA = load_live_prediction_data()
 
 PREDICTION_DATA = load_prediction_data()
 
+
+# ============================================================
 # Load Model Metrics
+# ============================================================
 
 def load_model_metrics():
     """
@@ -43,22 +72,37 @@ def load_model_metrics():
 
         return json.load(file)
 
+
+# ============================================================
 # Register Callbacks
+# ============================================================
 
 def register_callbacks(app):
     """
     Register all dashboard callbacks.
     """
- 
-# Populate City Dropdowns
-    
+
+
+    # ========================================================
+    # Populate City Dropdowns
+    # ========================================================
+
     @app.callback(
 
-        Output("city-dropdown","options",),
+        Output(
+            "city-dropdown",
+            "options",
+        ),
 
-        Output("history-city-dropdown","options",),
+        Output(
+            "history-city-dropdown",
+            "options",
+        ),
 
-        Input("city-dropdown","id",),
+        Input(
+            "city-dropdown",
+            "id",
+        ),
 
     )
     def populate_city_dropdowns(_):
@@ -87,20 +131,38 @@ def register_callbacks(app):
             options,
             options,
         )
-    
+
+
+    # ========================================================
     # Live Prediction
-    
+    # ========================================================
+
     @app.callback(
 
-        Output("latest-update","children",),
+        Output(
+            "latest-update",
+            "children",
+        ),
 
-        Output("current-temperature","children",),
+        Output(
+            "current-temperature",
+            "children",
+        ),
 
-        Output("predicted-temperature","children",),
+        Output(
+            "predicted-temperature",
+            "children",
+        ),
 
-        Output("prediction-difference","children",),
+        Output(
+            "prediction-difference",
+            "children",
+        ),
 
-        Input("city-dropdown","value",),
+        Input(
+            "city-dropdown",
+            "value",
+        ),
 
     )
     def update_live_prediction(city):
@@ -113,7 +175,8 @@ def register_callbacks(app):
 
             raise dash.exceptions.PreventUpdate
 
-# Get latest feature record
+
+        # Get latest feature record
 
         feature_data = load_live_prediction_data()
 
@@ -131,7 +194,8 @@ def register_callbacks(app):
                 "N/A",
             )
 
-# Prepare FastAPI payload
+
+        # Prepare FastAPI payload
 
         payload = prepare_api_payload(
             record
@@ -153,6 +217,7 @@ def register_callbacks(app):
                 "Unavailable",
                 "Prediction API Offline",
             )
+
 
         current_temperature = float(
             record["temperature"]
@@ -180,20 +245,38 @@ def register_callbacks(app):
             f"{prediction_difference:+.2f} °C",
 
         )
-    
-# Historical Prediction
-    
+
+
+    # ========================================================
+    # Historical Prediction
+    # ========================================================
+
     @app.callback(
 
-        Output("prediction-table","data",),
+        Output(
+            "prediction-table",
+            "data",
+        ),
 
-        Output("actual-vs-predicted-chart","figure",),
+        Output(
+            "actual-vs-predicted-chart",
+            "figure",
+        ),
 
-        Output("prediction-error-chart","figure",),
+        Output(
+            "prediction-error-chart",
+            "figure",
+        ),
 
-        Input("history-city-dropdown","value",),
+        Input(
+            "history-city-dropdown",
+            "value",
+        ),
 
-        Input("history-date-picker","date",),
+        Input(
+            "history-date-picker",
+            "date",
+        ),
 
     )
     def update_historical_prediction(
@@ -205,13 +288,30 @@ def register_callbacks(app):
         and performance charts.
         """
 
+        # ----------------------------------------------------
+        # Initial state: no city selected
+        # ----------------------------------------------------
+
         if city is None:
 
-            raise dash.exceptions.PreventUpdate
+            empty_figure = go.Figure()
 
-        
-# Filter prediction dataset
-        
+            empty_figure.update_layout(
+                title="Select a city to view prediction data",
+                **DARK_PLOT_LAYOUT,
+            )
+
+            return (
+                [],
+                empty_figure,
+                empty_figure,
+            )
+
+
+        # ----------------------------------------------------
+        # Filter prediction dataset
+        # ----------------------------------------------------
+
         prediction_data = load_prediction_data()
 
         filtered_df = filter_prediction_data(
@@ -220,48 +320,47 @@ def register_callbacks(app):
             selected_date,
         )
 
+
+        # ----------------------------------------------------
+        # No prediction data available
+        # ----------------------------------------------------
+
         if filtered_df.empty:
 
             empty_figure = go.Figure()
 
             empty_figure.update_layout(
-
-                title="No prediction data available"
-
+                title="No prediction data available",
+                **DARK_PLOT_LAYOUT,
             )
 
             return (
-
                 [],
-
                 empty_figure,
-
                 empty_figure,
-
             )
 
-        
-        # Prediction table
+
+        # ----------------------------------------------------
+        # Prediction Table
+        # ----------------------------------------------------
 
         table_df = filtered_df.copy()
 
         table_df["time"] = (
-
             table_df["time"]
-
             .dt.strftime("%Y-%m-%d %H:%M")
-
         )
 
         table_data = table_df.to_dict(
-
             "records"
-
         )
 
-        
+
+        # ----------------------------------------------------
         # Actual vs Predicted Chart
-        
+        # ----------------------------------------------------
+
         actual_chart = go.Figure()
 
         actual_chart.add_trace(
@@ -277,6 +376,11 @@ def register_callbacks(app):
                 mode="lines",
 
                 name="Actual",
+
+                line={
+                    "color": "#7dd3fc",
+                    "width": 2,
+                },
 
             )
 
@@ -296,6 +400,11 @@ def register_callbacks(app):
 
                 name="Predicted",
 
+                line={
+                    "color": "#fb923c",
+                    "width": 2,
+                },
+
             )
 
         )
@@ -310,11 +419,15 @@ def register_callbacks(app):
 
             hovermode="x unified",
 
+            **DARK_PLOT_LAYOUT,
+
         )
 
-        
+
+        # ----------------------------------------------------
         # Prediction Error Chart
-        
+        # ----------------------------------------------------
+
         error_chart = go.Figure()
 
         error_chart.add_trace(
@@ -329,6 +442,10 @@ def register_callbacks(app):
 
                 name="Prediction Error",
 
+                marker={
+                    "color": "#818cf8",
+                },
+
             )
 
         )
@@ -341,7 +458,14 @@ def register_callbacks(app):
 
             yaxis_title="Error (°C)",
 
+            **DARK_PLOT_LAYOUT,
+
         )
+
+
+        # ----------------------------------------------------
+        # Return Results
+        # ----------------------------------------------------
 
         return (
 
@@ -352,24 +476,48 @@ def register_callbacks(app):
             error_chart,
 
         )
-    
+
+
+    # ========================================================
     # Model Information
-    
+    # ========================================================
+
     @app.callback(
 
-        Output("model-name","children",),
+        Output(
+            "model-name",
+            "children",
+        ),
 
-        Output("model-r2","children",),
+        Output(
+            "model-r2",
+            "children",
+        ),
 
-        Output("model-rmse","children",),
+        Output(
+            "model-rmse",
+            "children",
+        ),
 
-        Output("model-mae","children",),
+        Output(
+            "model-mae",
+            "children",
+        ),
 
-        Output("model-dataset","children",),
+        Output(
+            "model-dataset",
+            "children",
+        ),
 
-        Output("model-trained-at","children",),
+        Output(
+            "model-trained-at",
+            "children",
+        ),
 
-        Input("city-dropdown","value",),
+        Input(
+            "city-dropdown",
+            "value",
+        ),
 
     )
     def update_model_information(_):
@@ -403,4 +551,11 @@ def register_callbacks(app):
             metrics["trained_at"]
         )
 
-        return (model_name, r2_score, rmse, mae, dataset, trained_at,)
+        return (
+            model_name,
+            r2_score,
+            rmse,
+            mae,
+            dataset,
+            trained_at,
+        )

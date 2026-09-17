@@ -1,0 +1,18 @@
+#city-dropdown,
+#history-city-dropdown {
+    background-color: #0a1929 !important;
+    color: #ffffff !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+#city-dropdown:hover,
+#history-city-dropdown:hover {
+    background-color: #0a1929 !important;
+}
+
+#city-dropdown:focus,
+#history-city-dropdown:focus {
+    background-color: #0a1929 !important;
+    outline: none !important;
+}
