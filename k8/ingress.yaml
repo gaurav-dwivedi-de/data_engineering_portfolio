@@ -5,11 +5,12 @@ metadata:
   namespace: default
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web
+
 spec:
   ingressClassName: traefik
+
   rules:
-    - host: ml.weather-intelligence.workers.dev
-      http:
+    - http:
         paths:
           - path: /
             pathType: Prefix
