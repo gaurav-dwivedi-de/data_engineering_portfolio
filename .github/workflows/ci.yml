@@ -314,15 +314,12 @@ jobs:
               echo '7. Applying Kubernetes Ingress'
               echo '========================================'
 
-              REPO="/home/ubuntu/data_engineering_portfolio"
+              echo 'Checking: /home/ubuntu/data_engineering_portfolio/k8/ingress.yaml'
 
-              echo "REPO=$REPO"
-              echo "Checking: $REPO/k8/ingress.yaml"
-
-              ls -l "$REPO/k8/ingress.yaml"
+              ls -l /home/ubuntu/data_engineering_portfolio/k8/ingress.yaml
 
               sudo k3s kubectl apply \
-                -f "$REPO/k8/ingress.yaml"
+                -f /home/ubuntu/data_engineering_portfolio/k8/ingress.yaml
 
               sudo k3s kubectl get ingress \
                 weather-platform-ingress
