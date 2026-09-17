@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: weather-platform-ingress
+  namespace: default
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ml.weather-intelligence.workers.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prediction-dashboard-service
+                port:
+                  number: 8051
+
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: fastapi-service
+                port:
+                  number: 8000
+
+          - path: /airflow
+            pathType: Prefix
+            backend:
+              service:
+                name: airflow-apiserver
+                port:
+                  number: 8080
