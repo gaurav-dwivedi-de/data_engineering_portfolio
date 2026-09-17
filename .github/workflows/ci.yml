@@ -319,7 +319,7 @@ jobs:
               ls -l /home/ubuntu/data_engineering_portfolio/k8/ingress.yaml
 
               sudo k3s kubectl apply \
-                -f /home/ubuntu/data_engineering_portfolio/k8/ingress.yaml
+                -f "$REPO/k8/ingress.yaml"
 
               sudo k3s kubectl get ingress \
                 weather-platform-ingress
