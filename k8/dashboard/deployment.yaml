@@ -101,6 +101,12 @@ spec:
             - name: FASTAPI_URL
               value: "http://fastapi-service:8000"
 
+            - name: AIRFLOW_URL
+              valueFrom:
+                secretKeyRef:
+                  name: weather-env
+                  key: AIRFLOW_URL
+
             - name: MODEL_PATH
               value: "/app/model_artifacts/best_model.pkl"
 

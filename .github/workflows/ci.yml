@@ -311,6 +311,18 @@ jobs:
               echo 'Dashboard is ready.'
 
               echo '========================================'
+              echo '7. Applying Kubernetes Ingress'
+              echo '========================================'
+
+              sudo k3s kubectl apply \
+                -f $REPO/k8/ingress.yaml
+
+              sudo k3s kubectl get ingress \
+                weather-platform-ingress
+
+              echo 'Kubernetes Ingress is ready.'
+
+              echo '========================================'
               echo 'FINAL DEPLOYMENT STATUS'
               echo '========================================'
 
