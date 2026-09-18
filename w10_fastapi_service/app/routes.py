@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/",
+    "/api",
     tags=["Health"],
 )
 def health_check():

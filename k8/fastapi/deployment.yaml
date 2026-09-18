@@ -123,7 +123,7 @@ spec:
 
           readinessProbe:
             httpGet:
-              path: /
+              path: /api
               port: 8000
             initialDelaySeconds: 5
             timeoutSeconds: 1
@@ -132,7 +132,7 @@ spec:
 
           livenessProbe:
             httpGet:
-              path: /
+              path: /api
               port: 8000
             initialDelaySeconds: 120
             timeoutSeconds: 10
