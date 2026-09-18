@@ -220,3 +220,4 @@ assets/.cache/
 /w6_dashboard_minio/data
 /w5_spark_weather_etl/data
 .envAIRFLOW_ADMIN_USERNAME=admin
+k8/.k8-env
