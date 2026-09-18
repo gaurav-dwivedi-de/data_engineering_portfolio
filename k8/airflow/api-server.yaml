@@ -32,8 +32,6 @@ spec:
               value: "LocalExecutor"
             - name: AIRFLOW__CORE__AUTH_MANAGER
               value: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
-            - name: AIRFLOW__API__BASE_URL
-              value: "https://ml.weather-intelligence.workers.dev/airflow"
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
               value: "postgresql+psycopg2://airflow:airflow@postgres:5432/airflow"
             - name: AIRFLOW__CORE__EXECUTION_API_SERVER_URL
