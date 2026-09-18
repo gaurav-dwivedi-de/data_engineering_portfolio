@@ -342,3 +342,4 @@ jobs:
               echo 'All workloads deployed successfully.'
               echo '========================================'
             "
+            
