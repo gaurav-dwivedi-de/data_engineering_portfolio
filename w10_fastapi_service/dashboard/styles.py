@@ -9,6 +9,7 @@ PAGE_STYLE = {
     "minHeight": "100vh",
     "color": "#e8f1ff",
     "fontFamily": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    "overflowX": "hidden",
 }
 
 
@@ -23,6 +24,7 @@ SIDEBAR_STYLE = {
     "borderRight": "1px solid rgba(120, 180, 255, 0.12)",
     "padding": "24px 16px",
     "zIndex": "1000",
+    "boxSizing": "border-box",
 }
 
 
@@ -30,6 +32,7 @@ MAIN_STYLE = {
     "marginLeft": "240px",
     "minHeight": "100vh",
     "backgroundColor": "#06111f",
+    "minWidth": "0",
 }
 
 
@@ -37,6 +40,8 @@ CONTENT_STYLE = {
     "padding": "28px",
     "backgroundColor": "#06111f",
     "minHeight": "100vh",
+    "boxSizing": "border-box",
+    "maxWidth": "100%",
 }
 
 
@@ -102,6 +107,8 @@ CARD_STYLE = {
     "border": "1px solid rgba(120, 180, 255, 0.14)",
     "borderRadius": "16px",
     "boxShadow": "0 10px 30px rgba(0,0,0,0.20)",
+    "boxSizing": "border-box",
+    "maxWidth": "100%",
 }
 
 
@@ -109,6 +116,7 @@ KPI_CARD_STYLE = {
     **CARD_STYLE,
     "minHeight": "145px",
     "padding": "20px",
+    "width": "100%",
 }
 
 
@@ -116,8 +124,12 @@ MODEL_CARD_STYLE = {
     **CARD_STYLE,
     "minHeight": "105px",
     "padding": "18px",
+    "width": "100%",
 }
 
+
+# Kept for compatibility with existing layout imports.
+# KPI/model rows are now controlled by dbc.Row in layout.py.
 
 KPI_ROW_STYLE = {
     "display": "flex",
@@ -147,6 +159,8 @@ MODEL_COLUMN_STYLE = {
 
 SECTION_STYLE = {
     "marginTop": "22px",
+    "maxWidth": "100%",
+    "minWidth": "0",
 }
 
 
@@ -298,6 +312,7 @@ DROPDOWN_STYLE = {
     "color": "#ffffff",
     "border": "1px solid rgba(120, 180, 255, 0.20)",
     "borderRadius": "8px",
+    "width": "100%",
 }
 
 
@@ -312,6 +327,7 @@ DATE_STYLE = {
 TABLE_STYLE = {
     "overflowX": "auto",
     "backgroundColor": "#0b1b2d",
+    "maxWidth": "100%",
 }
 
 
@@ -338,6 +354,8 @@ GRAPH_STYLE = {
     "borderRadius": "16px",
     "padding": "4px",
     "marginBottom": "14px",
+    "maxWidth": "100%",
+    "boxSizing": "border-box",
 }
 
 
@@ -359,12 +377,27 @@ SIDEBAR_FOOTER_STYLE = {
 
 
 # ============================================================
-# Dropdown + Date Picker CSS
-# Dash 4.4.1
+# Dropdown + Date Picker + Responsive CSS
+# Dash 4.x
 # ============================================================
 
 DROPDOWN_CSS = """
 <style>
+
+/* ============================================================
+   Global responsive behaviour
+   ============================================================ */
+
+html,
+body {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+* {
+    box-sizing: border-box;
+}
+
 
 /* ============================================================
    General dropdown container
@@ -376,7 +409,7 @@ DROPDOWN_CSS = """
 
 
 /* ============================================================
-   Dash 4.4.1 - exact City dropdown buttons
+   Dash 4.x - exact City dropdown buttons
    ============================================================ */
 
 #city-dropdown,
@@ -390,7 +423,7 @@ DROPDOWN_CSS = """
 
 
 /* ============================================================
-   Dash 4.4.1 dropdown wrapper
+   Dash dropdown wrapper
    ============================================================ */
 
 .weather-dropdown .dash-dropdown-wrapper {
@@ -398,6 +431,7 @@ DROPDOWN_CSS = """
     border: 1px solid rgba(120, 180, 255, 0.20) !important;
     border-radius: 8px !important;
     box-shadow: none !important;
+    width: 100% !important;
 }
 
 
@@ -411,6 +445,7 @@ DROPDOWN_CSS = """
     color: #ffffff !important;
     border: none !important;
     box-shadow: none !important;
+    max-width: 100% !important;
 }
 
 
@@ -590,11 +625,304 @@ DROPDOWN_CSS = """
 
 
 /* ============================================================
+   Dash Bootstrap responsive rows
+   ============================================================ */
+
+.row {
+    max-width: 100%;
+}
+
+
+/* ============================================================
+   Graph responsiveness
+   ============================================================ */
+
+.js-plotly-plot,
+.plot-container,
+.plotly {
+    max-width: 100% !important;
+}
+
+
+/* ============================================================
+   DataTable responsiveness
+   ============================================================ */
+
+.dash-table-container {
+    max-width: 100%;
+    overflow-x: auto !important;
+}
+
+
+/* ============================================================
    General labels
    ============================================================ */
 
 label {
     color: #a9c0dc !important;
+}
+
+
+/* ============================================================
+   TABLET
+   768px - 991px
+   ============================================================ */
+
+@media (min-width: 768px) and (max-width: 991px) {
+
+    #weather-dashboard-sidebar {
+        width: 190px !important;
+    }
+
+}
+
+
+/* ============================================================
+   MOBILE
+   <= 767px
+
+   Sidebar becomes a horizontal top navigation area.
+   Main content no longer reserves 240px on the left.
+   ============================================================ */
+
+@media (max-width: 767px) {
+
+    /* --------------------------------------------------------
+       Sidebar
+       -------------------------------------------------------- */
+
+    #weather-dashboard-sidebar {
+        position: relative !important;
+        width: 100% !important;
+        min-height: auto !important;
+        height: auto !important;
+        left: auto !important;
+        top: auto !important;
+        bottom: auto !important;
+        padding: 16px !important;
+        border-right: none !important;
+        border-bottom: 1px solid rgba(120, 180, 255, 0.12) !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Main content
+       -------------------------------------------------------- */
+
+    #weather-dashboard-main {
+        margin-left: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Content padding
+       -------------------------------------------------------- */
+
+    #weather-dashboard-content {
+        padding: 18px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Header
+       -------------------------------------------------------- */
+
+    h1 {
+        max-width: 100%;
+        word-wrap: break-word;
+    }
+
+
+    /* --------------------------------------------------------
+       Hero
+       -------------------------------------------------------- */
+
+    #weather-dashboard-hero {
+        padding: 22px !important;
+        min-height: auto !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Hero title
+       -------------------------------------------------------- */
+
+    #weather-dashboard-hero h1 {
+        font-size: 30px !important;
+        line-height: 1.15 !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Hero description
+       -------------------------------------------------------- */
+
+    #weather-dashboard-hero div {
+        max-width: 100%;
+    }
+
+
+    /* --------------------------------------------------------
+       Badges
+       -------------------------------------------------------- */
+
+    #weather-dashboard-hero span {
+        margin-right: 5px !important;
+        margin-top: 8px !important;
+        padding: 6px 9px !important;
+        font-size: 10px !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Bootstrap columns
+       -------------------------------------------------------- */
+
+    .row {
+        width: 100% !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
+
+
+    .row > [class*="col-"] {
+        width: 100%;
+        max-width: 100%;
+    }
+
+
+    /* --------------------------------------------------------
+       KPI cards
+       -------------------------------------------------------- */
+
+    .row .card,
+    .row > div {
+        max-width: 100%;
+    }
+
+
+    /* --------------------------------------------------------
+       KPI value
+       -------------------------------------------------------- */
+
+    [id="current-temperature"],
+    [id="predicted-temperature"],
+    [id="prediction-difference"] {
+        max-width: 100%;
+    }
+
+
+    /* --------------------------------------------------------
+       Model information
+       -------------------------------------------------------- */
+
+    #model-name {
+        word-break: break-word;
+    }
+
+
+    #model-trained-at {
+        word-break: break-word;
+    }
+
+
+    /* --------------------------------------------------------
+       Date picker
+       -------------------------------------------------------- */
+
+    .DatePickerSingleInput {
+        max-width: 100% !important;
+    }
+
+
+    .DateInput {
+        width: 100% !important;
+    }
+
+
+    .DateInput_input {
+        width: 100% !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Historical table
+       -------------------------------------------------------- */
+
+    .dash-table-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow-x: auto !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Graphs
+       -------------------------------------------------------- */
+
+    .js-plotly-plot {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+
+    /* --------------------------------------------------------
+       Footer
+       -------------------------------------------------------- */
+
+    #weather-dashboard-main footer {
+        text-align: center;
+        line-height: 1.5;
+    }
+}
+
+
+/* ============================================================
+   SMALL PHONES
+   <= 480px
+   ============================================================ */
+
+@media (max-width: 480px) {
+
+    #weather-dashboard-content {
+        padding: 14px !important;
+    }
+
+
+    #weather-dashboard-hero {
+        padding: 18px !important;
+        border-radius: 14px !important;
+    }
+
+
+    #weather-dashboard-hero h1 {
+        font-size: 26px !important;
+    }
+
+
+    .hero-text {
+        font-size: 14px !important;
+    }
+
+
+    .weather-dropdown {
+        width: 100% !important;
+    }
+
+
+    .row {
+        --bs-gutter-x: 0.75rem;
+    }
+
+
+    .row > [class*="col-"] {
+        padding-left: 0.375rem;
+        padding-right: 0.375rem;
+    }
 }
 
 </style>

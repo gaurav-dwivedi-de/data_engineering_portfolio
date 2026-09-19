@@ -6,6 +6,7 @@
 import os
 
 from dash import dcc, html
+import dash_bootstrap_components as dbc
 from dash.dash_table import DataTable
 from dash_iconify import DashIconify
 
@@ -390,6 +391,12 @@ sidebar = html.Div(
             style=SIDEBAR_FOOTER_STYLE,
         ),
     ],
+
+    # NEW:
+    # Allows responsive CSS in styles.py to target the sidebar
+    # specifically without affecting other html.Div elements.
+    id="weather-dashboard-sidebar",
+
     style=SIDEBAR_STYLE,
 )
 
@@ -510,8 +517,15 @@ hero = html.Div(
             },
         ),
     ],
+
+    # NEW:
+    # Allows responsive CSS to target only the hero section.
+    id="weather-dashboard-hero",
+
     style=HERO_STYLE,
 )
+
+
 # ============================================================
 # Live Prediction
 # ============================================================
@@ -544,40 +558,52 @@ live_prediction_section = html.Div(
             }
         ),
 
-        # KPI cards — EXPLICIT FLEX ROW
-        html.Div(
+        # ====================================================
+        # Responsive KPI cards
+        #
+        # Phone:
+        #   1 card per row
+        #
+        # Desktop:
+        #   3 cards per row
+        # ====================================================
+
+        dbc.Row(
             [
-                html.Div(
+                dbc.Col(
                     kpi_card(
                         "Current Temperature",
                         "Observed temperature",
                         "current-temperature",
                         "mdi:thermometer",
                     ),
-                    style=KPI_COLUMN_STYLE,
+                    xs=12,
+                    md=4,
                 ),
 
-                html.Div(
+                dbc.Col(
                     kpi_card(
                         "Predicted Temperature",
                         "Next-hour prediction",
                         "predicted-temperature",
                         "mdi:weather-sunny",
                     ),
-                    style=KPI_COLUMN_STYLE,
+                    xs=12,
+                    md=4,
                 ),
 
-                html.Div(
+                dbc.Col(
                     kpi_card(
                         "Prediction Difference",
                         "Prediction vs current",
                         "prediction-difference",
                         "mdi:triangle-outline",
                     ),
-                    style=KPI_COLUMN_STYLE,
+                    xs=12,
+                    md=4,
                 ),
             ],
-            style=KPI_ROW_STYLE,
+            className="g-3",
         ),
 
         html.Div(
@@ -614,46 +640,66 @@ model_performance_section = html.Div(
             "Latest model evaluation metrics",
         ),
 
-        # Model metrics — EXPLICIT FLEX ROW
-        html.Div(
+        # ====================================================
+        # Responsive model metric cards
+        #
+        # Phone:
+        #   1 card per row
+        #
+        # Tablet:
+        #   2 cards per row
+        #
+        # Desktop:
+        #   4 cards per row
+        # ====================================================
+
+        dbc.Row(
             [
-                html.Div(
+                dbc.Col(
                     metric_card(
                         "R² SCORE",
                         "model-r2",
                         "mdi:chart-bell-curve",
                     ),
-                    style=MODEL_COLUMN_STYLE,
+                    xs=12,
+                    sm=6,
+                    lg=3,
                 ),
 
-                html.Div(
+                dbc.Col(
                     metric_card(
                         "RMSE",
                         "model-rmse",
                         "mdi:chart-line",
                     ),
-                    style=MODEL_COLUMN_STYLE,
+                    xs=12,
+                    sm=6,
+                    lg=3,
                 ),
 
-                html.Div(
+                dbc.Col(
                     metric_card(
                         "MAE",
                         "model-mae",
                         "mdi:chart-line",
                     ),
-                    style=MODEL_COLUMN_STYLE,
+                    xs=12,
+                    sm=6,
+                    lg=3,
                 ),
 
-                html.Div(
+                dbc.Col(
                     metric_card(
                         "DATASET",
                         "model-dataset",
                         "mdi:database-outline",
                     ),
-                    style=MODEL_COLUMN_STYLE,
+                    xs=12,
+                    sm=6,
+                    lg=3,
                 ),
             ],
-            style=MODEL_ROW_STYLE,
+            className="g-3",
         ),
 
         html.Div(
@@ -835,6 +881,8 @@ historical_analysis_section = html.Div(
     ],
     style=SECTION_STYLE,
 )
+
+
 # ============================================================
 # Footer
 # ============================================================
@@ -873,9 +921,20 @@ layout = html.Div(
                         historical_analysis_section,
                         footer,
                     ],
+
+                    # NEW:
+                    # Allows responsive CSS to control content padding.
+                    id="weather-dashboard-content",
+
                     style=CONTENT_STYLE,
                 ),
             ],
+
+            # NEW:
+            # Allows responsive CSS to remove the 240px desktop
+            # sidebar margin on mobile.
+            id="weather-dashboard-main",
+
             style=MAIN_STYLE,
         ),
     ],
