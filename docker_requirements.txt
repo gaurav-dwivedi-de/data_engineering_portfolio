@@ -8,6 +8,7 @@ dash
 pyarrow #Reading/writing Parquet
 dash-bootstrap-components
 dash-iconify
+dash-bootstrap-components
 
 # Machine Learning
 scikit-learn
