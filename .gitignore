@@ -197,6 +197,11 @@ venv/
 *.jpg
 *.jpeg
 *.svg
+
+# Dashboard assets
+!w10_fastapi_service/dashboard/assets/architecture.png
+!w10_fastapi_service/dashboard/assets/mountain-background.jpg
+
 # Generated CSV Outputs
 *.csv
 
