@@ -1,6 +1,7 @@
 import os
 
 from dash import Dash
+import dash_bootstrap_components as dbc
 from dotenv import load_dotenv
 
 from dashboard.callbacks import register_callbacks
@@ -13,6 +14,7 @@ load_dotenv()
 app = Dash(
     __name__,
     title="Weather Prediction Dashboard",
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
 )
 
 # Dashboard layout
