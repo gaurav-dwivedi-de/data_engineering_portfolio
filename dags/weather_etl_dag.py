@@ -75,10 +75,22 @@ def end_pipeline():
 def refresh_applications():
     """
     Restart FastAPI and Prediction Dashboard deployments
-    so their init containers download the latest S3 artifacts.
+    when running in Kubernetes.
+
+    Skip application refresh when running under Docker Compose.
     """
 
+    import os
     from datetime import datetime, timezone
+
+    # Kubernetes automatically provides this variable
+    # to containers running inside the cluster.
+    if not os.getenv("KUBERNETES_SERVICE_HOST"):
+        print(
+            "[REFRESH] Docker Compose environment detected. "
+            "Application refresh skipped."
+        )
+        return
 
     from kubernetes import client, config
 
