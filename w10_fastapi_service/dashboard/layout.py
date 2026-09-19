@@ -12,27 +12,17 @@ from dash_iconify import DashIconify
 
 from dashboard.styles import (
     PAGE_STYLE,
-    SIDEBAR_STYLE,
-    MAIN_STYLE,
     CONTENT_STYLE,
 
     HEADER_STYLE,
     HEADER_TITLE_STYLE,
     HEADER_SUBTITLE_STYLE,
 
-    NAV_SECTION_STYLE,
     NAV_ITEM_STYLE,
     ACTIVE_NAV_STYLE,
 
-    CARD_STYLE,
     KPI_CARD_STYLE,
     MODEL_CARD_STYLE,
-
-    KPI_ROW_STYLE,
-    KPI_COLUMN_STYLE,
-
-    MODEL_ROW_STYLE,
-    MODEL_COLUMN_STYLE,
 
     SECTION_STYLE,
     SECTION_TITLE_STYLE,
@@ -67,7 +57,6 @@ from dashboard.styles import (
     GRAPH_STYLE,
 
     FOOTER_STYLE,
-    SIDEBAR_FOOTER_STYLE,
 
     DROPDOWN_CSS,
 )
@@ -76,23 +65,6 @@ from dashboard.styles import (
 # ============================================================
 # Environment Configuration
 # ============================================================
-
-# Airflow URL changes depending on where the Dashboard runs.
-#
-# Docker Compose:
-#   AIRFLOW_URL=http://localhost:8080/
-#
-# Local Kubernetes:
-#   AIRFLOW_URL=http://localhost:30080/
-#
-# Oracle K3s + public Traefik Ingress:
-#   AIRFLOW_URL=/airflow/
-#
-# Default:
-#   /airflow/
-#
-# This allows the same Dashboard image/code to run in all
-# environments without hard-coding one environment's URL.
 
 AIRFLOW_URL = os.getenv(
     "AIRFLOW_URL",
@@ -111,28 +83,6 @@ def icon(name, color="#46c8ff", size=18):
         width=size,
         height=size,
         color=color,
-    )
-
-
-def nav_item(label, icon_name, href="#", active=False):
-    """
-    Create a sidebar navigation item.
-
-    href is configurable so the same Dashboard can use
-    different Airflow URLs in different environments.
-    """
-
-    return html.A(
-        [
-            icon(
-                icon_name,
-                color="#ffffff" if active else "#8ea7c4",
-                size=15,
-            ),
-            html.Span(label),
-        ],
-        href=href,
-        style=ACTIVE_NAV_STYLE if active else NAV_ITEM_STYLE,
     )
 
 
@@ -171,16 +121,19 @@ def kpi_card(
                         ],
                         style=ICON_BOX_STYLE,
                     ),
+
                     html.Div(
                         [
                             html.Div(
                                 title,
                                 style=KPI_LABEL_STYLE,
                             ),
+
                             html.Div(
                                 id=component_id,
                                 style=KPI_VALUE_STYLE,
                             ),
+
                             html.Div(
                                 description,
                                 style=KPI_DESCRIPTION_STYLE,
@@ -218,6 +171,7 @@ def metric_card(
                         color="#8ea7c4",
                         size=13,
                     ),
+
                     html.Span(
                         title,
                         style={
@@ -231,6 +185,7 @@ def metric_card(
                     **MODEL_LABEL_STYLE,
                 },
             ),
+
             html.Div(
                 id=component_id,
                 style=MODEL_VALUE_STYLE,
@@ -241,13 +196,91 @@ def metric_card(
 
 
 # ============================================================
-# Sidebar
+# Top Navigation
 # ============================================================
 
 
-sidebar = html.Div(
+def nav_item(
+    label,
+    icon_name,
+    href="#",
+    active=False,
+    external=False,
+):
+    """
+    Create a top navigation item.
+
+    Parameters
+    ----------
+    label : str
+        Text displayed in the navigation item.
+
+    icon_name : str
+        Dash Iconify icon name.
+
+    href : str
+        Destination URL/path.
+
+    active : bool
+        Whether this item is currently active.
+
+    external : bool
+        Whether the destination should open in a new tab.
+    """
+
+    return html.A(
+        [
+            icon(
+                icon_name,
+                color="#ffffff" if active else "#8ea7c4",
+                size=15,
+            ),
+
+            html.Span(
+                label,
+                style={
+                    "marginLeft": "7px",
+                    "whiteSpace": "nowrap",
+                },
+            ),
+        ],
+
+        href=href,
+
+        # Open external resources in a new browser tab
+        target="_blank" if external else None,
+
+        # Security attribute for external links
+        rel="noopener noreferrer" if external else None,
+
+        style={
+            **(
+                ACTIVE_NAV_STYLE
+                if active
+                else NAV_ITEM_STYLE
+            ),
+            "display": "inline-flex",
+            "alignItems": "center",
+            "justifyContent": "center",
+            "textDecoration": "none",
+            "borderRadius": "10px",
+            "padding": "9px 13px",
+            "margin": "0",
+        },
+    )
+
+
+# ============================================================
+# Top Navigation Bar
+# ============================================================
+
+
+top_navigation = html.Div(
     [
-        # Logo / Brand
+        # ====================================================
+        # Brand
+        # ====================================================
+
         html.Div(
             [
                 html.Div(
@@ -255,149 +288,133 @@ sidebar = html.Div(
                         icon(
                             "mdi:cloud-outline",
                             color="#dceaff",
-                            size=25,
+                            size=28,
                         ),
+
                         html.Div(
                             [
                                 html.Div(
                                     "Weather Intelligence",
                                     style={
-                                        "fontSize": "11px",
+                                        "fontSize": "14px",
                                         "fontWeight": "700",
                                         "color": "#ffffff",
+                                        "lineHeight": "1.05",
                                     },
                                 ),
+
                                 html.Div(
                                     "Platform",
                                     style={
-                                        "fontSize": "11px",
+                                        "fontSize": "14px",
                                         "fontWeight": "700",
                                         "color": "#46c8ff",
+                                        "lineHeight": "1.05",
                                     },
                                 ),
                             ],
-                            style={
-                                "lineHeight": "1.15",
-                            },
                         ),
                     ],
                     style={
                         "display": "flex",
                         "alignItems": "center",
-                        "gap": "8px",
+                        "gap": "9px",
                     },
                 ),
+
                 html.Div(
                     "DATA ENGINEERING | ML | CLOUD",
                     style={
-                        "fontSize": "7px",
-                        "letterSpacing": "0.8px",
+                        "fontSize": "8px",
+                        "letterSpacing": "1px",
                         "color": "#59728d",
                         "marginTop": "7px",
                     },
                 ),
             ],
             style={
-                "marginBottom": "18px",
+                "flexShrink": "0",
             },
         ),
 
         # ====================================================
-        # Main
-        # ====================================================
-
-        html.Div(
-            "MAIN",
-            style=NAV_SECTION_STYLE,
-        ),
-
-        nav_item(
-            "Dashboard",
-            "mdi:view-dashboard-outline",
-            href="/",
-            active=True,
-        ),
-
-        # ====================================================
-        # Platform Apps
-        # ====================================================
-
-        html.Div(
-            "PLATFORM APPS",
-            style=NAV_SECTION_STYLE,
-        ),
-
-        nav_item(
-            "Airflow",
-            "simple-icons:apacheairflow",
-            href=AIRFLOW_URL,
-        ),
-
-        nav_item(
-            "MLflow",
-            "mdi:graph-outline",
-        ),
-
-        # ====================================================
-        # System
-        # ====================================================
-
-        html.Div(
-            "SYSTEM",
-            style=NAV_SECTION_STYLE,
-        ),
-
-        nav_item(
-            "Architecture",
-            "mdi:graph",
-        ),
-
-        nav_item(
-            "About",
-            "mdi:information-outline",
-        ),
-
-        # ====================================================
-        # Sidebar Footer
+        # Navigation Links
         # ====================================================
 
         html.Div(
             [
-                html.Div(
-                    "Platform",
-                    style={
-                        "fontSize": "8px",
-                        "color": "#617892",
-                    },
+                # Dashboard
+                nav_item(
+                    "Dashboard",
+                    "mdi:view-dashboard-outline",
+                    href="/",
+                    active=True,
                 ),
-                html.Div(
-                    "Public deployment",
-                    style={
-                        "fontSize": "10px",
-                        "fontWeight": "600",
-                        "color": "#dceaff",
-                        "marginTop": "2px",
-                    },
+
+                # Airflow
+                nav_item(
+                    "Airflow",
+                    "simple-icons:apacheairflow",
+                    href=AIRFLOW_URL,
                 ),
-                html.Div(
-                    "Kubernetes • Cloud • ML",
-                    style={
-                        "fontSize": "8px",
-                        "color": "#617892",
-                        "marginTop": "2px",
-                    },
+
+                # MLflow
+                nav_item(
+                    "MLflow",
+                    "mdi:graph-outline",
+                ),
+
+                # Architecture
+                # Opens architecture.png from assets/
+                # in a new browser tab.
+                nav_item(
+                    "Architecture",
+                    "mdi:graph-outline",
+                    href="/assets/architecture.png",
+                    external=True,
+                ),
+
+                # About
+                # Opens the GitHub repository
+                # in a new browser tab.
+                nav_item(
+                    "About",
+                    "mdi:information-outline",
+                    href=(
+                        "https://github.com/"
+                        "gaurav-dwivedi-de/"
+                        "data_engineering_portfolio"
+                    ),
+                    external=True,
                 ),
             ],
-            style=SIDEBAR_FOOTER_STYLE,
+
+            style={
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "flex-end",
+                "gap": "4px",
+                "flexWrap": "wrap",
+            },
         ),
     ],
 
-    # NEW:
-    # Allows responsive CSS in styles.py to target the sidebar
-    # specifically without affecting other html.Div elements.
-    id="weather-dashboard-sidebar",
+    id="weather-dashboard-navigation",
 
-    style=SIDEBAR_STYLE,
+    style={
+        "display": "flex",
+        "alignItems": "center",
+        "justifyContent": "space-between",
+        "gap": "20px",
+        "width": "100%",
+        "padding": "14px 28px",
+        "backgroundColor": "#061321",
+        "borderBottom": "1px solid #142b40",
+        "boxSizing": "border-box",
+        "position": "relative",
+        "zIndex": "1000",
+        "flexWrap": "wrap",
+    },
 )
 
 
@@ -414,6 +431,7 @@ header = html.Div(
                     "Weather Intelligence Platform",
                     style=HEADER_TITLE_STYLE,
                 ),
+
                 html.Div(
                     "Real-time weather insights, forecasts, "
                     "and cloud-native data engineering.",
@@ -447,6 +465,7 @@ hero = html.Div(
         html.H1(
             [
                 "From Data to ",
+
                 html.Span(
                     "Forecasts",
                     style=HERO_ACCENT_STYLE,
@@ -469,32 +488,12 @@ hero = html.Div(
 
         html.Div(
             [
-                html.Span(
-                    "Real Data",
-                    style=BADGE_STYLE,
-                ),
-                html.Span(
-                    "Machine Learning",
-                    style=BADGE_STYLE,
-                ),
-                html.Span(
-                    "Scalable Infrastructure",
-                    style=BADGE_STYLE,
-                ),
-                html.Span(
-                    "Real-World Impact",
-                    style=BADGE_STYLE,
-                ),
-            ]
-        ),
-
-        html.Div(
-            [
                 icon(
                     "mdi:cloud-check-outline",
                     color="#46c8ff",
                     size=25,
                 ),
+
                 html.Div(
                     "Cloud-Native",
                     style={
@@ -503,6 +502,7 @@ hero = html.Div(
                         "color": "#ffffff",
                     },
                 ),
+
                 html.Div(
                     "Data → ML → API → Dashboard",
                     style={
@@ -518,8 +518,6 @@ hero = html.Div(
         ),
     ],
 
-    # NEW:
-    # Allows responsive CSS to target only the hero section.
     id="weather-dashboard-hero",
 
     style=HERO_STYLE,
@@ -538,7 +536,6 @@ live_prediction_section = html.Div(
             "FastAPI-powered next-hour prediction",
         ),
 
-        # City selector FIRST
         html.Label(
             "Select City",
             style=LABEL_STYLE,
@@ -559,13 +556,10 @@ live_prediction_section = html.Div(
         ),
 
         # ====================================================
-        # Responsive KPI cards
+        # Bootstrap Responsive KPI Grid
         #
-        # Phone:
-        #   1 card per row
-        #
-        # Desktop:
-        #   3 cards per row
+        # xs=12 → one card per row on mobile
+        # md=4  → three cards per row on desktop/tablet
         # ====================================================
 
         dbc.Row(
@@ -614,6 +608,7 @@ live_prediction_section = html.Div(
                         "fontWeight": "600",
                     },
                 ),
+
                 html.Span(
                     id="latest-update",
                 ),
@@ -641,16 +636,11 @@ model_performance_section = html.Div(
         ),
 
         # ====================================================
-        # Responsive model metric cards
+        # Bootstrap Responsive Model Grid
         #
-        # Phone:
-        #   1 card per row
-        #
-        # Tablet:
-        #   2 cards per row
-        #
-        # Desktop:
-        #   4 cards per row
+        # xs=12 → 1 per row
+        # sm=6  → 2 per row
+        # lg=3  → 4 per row
         # ====================================================
 
         dbc.Row(
@@ -710,9 +700,11 @@ model_performance_section = html.Div(
                         "fontWeight": "700",
                     },
                 ),
+
                 html.Span(
                     id="model-name",
                 ),
+
                 html.Span(
                     "  •  LAST TRAINED ",
                     style={
@@ -720,6 +712,7 @@ model_performance_section = html.Div(
                         "marginLeft": "10px",
                     },
                 ),
+
                 html.Span(
                     id="model-trained-at",
                 ),
@@ -743,7 +736,6 @@ historical_analysis_section = html.Div(
             "Filter historical predictions and inspect model performance",
         ),
 
-        # City FIRST
         html.Label(
             "Select City",
             style=LABEL_STYLE,
@@ -763,7 +755,6 @@ historical_analysis_section = html.Div(
             }
         ),
 
-        # Date SECOND
         html.Label(
             "Select Date",
             style=LABEL_STYLE,
@@ -782,7 +773,10 @@ historical_analysis_section = html.Div(
             }
         ),
 
-        # Historical dataset THIRD
+        # ====================================================
+        # Historical Dataset
+        # ====================================================
+
         html.Div(
             [
                 html.Div(
@@ -792,6 +786,7 @@ historical_analysis_section = html.Div(
                             color="#46c8ff",
                             size=14,
                         ),
+
                         html.Span(
                             "Historical Prediction Records",
                             style={
@@ -856,7 +851,10 @@ historical_analysis_section = html.Div(
             }
         ),
 
-        # Graphs FOURTH
+        # ====================================================
+        # Graphs
+        # ====================================================
+
         html.Div(
             [
                 dcc.Graph(
@@ -896,49 +894,63 @@ footer = html.Div(
 
 
 # ============================================================
-# Complete Dashboard
+# Main Dashboard Content
+# ============================================================
+
+
+main_content = html.Div(
+    [
+        header,
+        hero,
+        live_prediction_section,
+        model_performance_section,
+        historical_analysis_section,
+        footer,
+    ],
+
+    id="weather-dashboard-content",
+
+    style=CONTENT_STYLE,
+)
+
+
+# ============================================================
+# Complete Responsive Dashboard
 # ============================================================
 
 
 layout = html.Div(
     [
-        # Inject custom dashboard CSS
+        # ====================================================
+        # Inject custom Dashboard component CSS
+        # ====================================================
+
         dcc.Markdown(
             DROPDOWN_CSS,
             dangerously_allow_html=True,
         ),
 
-        sidebar,
+        # ====================================================
+        # Top Navigation
+        # ====================================================
 
-        html.Div(
-            [
-                html.Div(
-                    [
-                        header,
-                        hero,
-                        live_prediction_section,
-                        model_performance_section,
-                        historical_analysis_section,
-                        footer,
-                    ],
+        top_navigation,
 
-                    # NEW:
-                    # Allows responsive CSS to control content padding.
-                    id="weather-dashboard-content",
+        # ====================================================
+        # Main Dashboard Content
+        # ====================================================
 
-                    style=CONTENT_STYLE,
-                ),
-            ],
-
-            # NEW:
-            # Allows responsive CSS to remove the 240px desktop
-            # sidebar margin on mobile.
-            id="weather-dashboard-main",
-
-            style=MAIN_STYLE,
-        ),
+        main_content,
     ],
-    style=PAGE_STYLE,
+
+    id="weather-dashboard-main",
+
+    style={
+        **PAGE_STYLE,
+        "width": "100%",
+        "minHeight": "100vh",
+        "overflowX": "hidden",
+    },
 )
 
 

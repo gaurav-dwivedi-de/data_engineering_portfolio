@@ -25,6 +25,7 @@ cycler==0.12.1
 dash==4.1.0
 dash-bootstrap-components
 dash-iconify
+dash-bootstrap-components
 debugpy==1.8.20
 decorator==5.2.1
 defusedxml==0.7.1
