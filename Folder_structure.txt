@@ -15,7 +15,9 @@
 │   └── P2-W4
 │       ├── P2-W4-D1.md
 │       ├── P2-W4-D2.md
-│       └── P2-W4-D3.md
+│       ├── P2-W4-D3.md
+│       ├── P2-W4-D4.md
+│       └── P2-W4-D5.md
 ├── config
 ├── dags
 │   └── weather_etl_dag.py
@@ -36,6 +38,7 @@
 │   ├── fastapi
 │   │   ├── deployment.yaml
 │   │   └── service.yaml
+│   ├── ingress.yaml
 │   ├── minio
 │   │   ├── README.md
 │   │   ├── deploy_minio.sh
@@ -75,6 +78,7 @@
 │   │   ├── __init__.py
 │   │   ├── api_client.py
 │   │   ├── app.py
+│   │   ├── assets
 │   │   ├── callbacks.py
 │   │   ├── layout.py
 │   │   ├── live_prediction_loader.py
@@ -83,15 +87,6 @@
 │   └── tests
 │       ├── __init__.py
 │       └── test_prediction_loader.py
-├── w11_deployment
-│   ├── README.md
-│   ├── diagrams
-│   ├── render
-│   │   ├── Dockerfile.dashboard
-│   │   ├── Dockerfile.fastapi
-│   │   ├── README.md
-│   │   └── render.yaml
-│   └── screenshots
 ├── w1_weather_data_cleaner
 │   ├── README.md
 │   ├── README_TEMPLATE.md
@@ -228,4 +223,4 @@
 │       └── figures
 └── workflow.md
 
-73 directories, 156 files
+70 directories, 154 files
