@@ -226,3 +226,10 @@ assets/.cache/
 /w5_spark_weather_etl/data
 .envAIRFLOW_ADMIN_USERNAME=admin
 k8/.k8-env
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
