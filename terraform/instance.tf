@@ -10,8 +10,9 @@ resource "oci_core_instance" "weather_platform_k3s" {
   }
 
   source_details {
-    source_type = "image"
-    source_id   = "ocid1.image.oc1.uk-london-1.aaaaaaaafq3nyno7a72qsi6kkehqbpidfumkwwxjqapsj5l6qlojhrqn6mqa"
+    source_type             = "image"
+    source_id               = "ocid1.image.oc1.uk-london-1.aaaaaaaafq3nyno7a72qsi6kkehqbpidfumkwwxjqapsj5l6qlojhrqn6mqa"
+    boot_volume_size_in_gbs = 200
   }
 
   create_vnic_details {
