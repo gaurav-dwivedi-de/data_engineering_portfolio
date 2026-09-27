@@ -6,5 +6,10 @@ terraform {
       source  = "oracle/oci"
       version = ">= 6.0"
     }
+
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.0"
+    }
   }
 }
