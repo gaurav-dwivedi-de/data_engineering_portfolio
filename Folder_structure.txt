@@ -12,12 +12,24 @@
 │   │   ├── P2-W3-D3.md
 │   │   ├── P2-W3-D4.md
 │   │   └── P2-W3-D5.md
-│   └── P2-W4
-│       ├── P2-W4-D1.md
-│       ├── P2-W4-D2.md
-│       ├── P2-W4-D3.md
-│       ├── P2-W4-D4.md
-│       └── P2-W4-D5.md
+│   ├── P2-W4
+│   │   ├── P2-W4-D1.md
+│   │   ├── P2-W4-D2.md
+│   │   ├── P2-W4-D3.md
+│   │   ├── P2-W4-D4.md
+│   │   └── P2-W4-D5.md
+│   ├── P2-W5
+│   │   ├── P2-W5-D1.md
+│   │   ├── P2-W5-D2.md
+│   │   ├── P2-W5-D3.md
+│   │   ├── P2-W5-D4.md
+│   │   └── P2-W5-D5.md
+│   └── P2-W6
+│       ├── P2-W6-D1.md
+│       ├── P2-W6-D2.md
+│       ├── P2-W6-D3.md
+│       ├── P2-W6-D4.md
+│       └── P2-W6-D5.md
 ├── config
 ├── dags
 │   └── weather_etl_dag.py
@@ -62,6 +74,18 @@
 ├── requirements.txt
 ├── s3_test.txt
 ├── s3_test_downloaded.txt
+├── terraform
+│   ├── README.md
+│   ├── data.tf
+│   ├── instance.tf
+│   ├── network.tf
+│   ├── outputs.tf
+│   ├── provider.tf
+│   ├── terraform.tfstate
+│   ├── terraform.tfstate.1790340190.backup
+│   ├── terraform.tfstate.backup
+│   ├── variables.tf
+│   └── versions.tf
 ├── test_README.md
 ├── tests
 │   └── test_project_imports.py
@@ -223,4 +247,4 @@
 │       └── figures
 └── workflow.md
 
-70 directories, 154 files
+73 directories, 175 files
