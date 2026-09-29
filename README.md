@@ -70,7 +70,7 @@ PostgreSQL and MinIO are infrastructure services used by the pipeline. They are 
                      WEATHER DATA
                           │
                           ▼
-             ┌────────────���───────────┐
+             ┌────────────────────────┐
              │ W1 — Data Collection & │
              │      Cleaning          │
              └───────────┬────────────┘
