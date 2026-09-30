@@ -1,0 +1,18 @@
+{
+  "dataset": "w7_mllib_test.parquet",
+  "test_rows": 9171,
+  "models": {
+    "linear_regression": {
+      "rmse": 0.572814,
+      "mae": 0.405196,
+      "r2": 0.985439,
+      "framework": "Spark MLlib"
+    },
+    "random_forest": {
+      "rmse": 1.169886,
+      "mae": 0.687464,
+      "r2": 0.939262,
+      "framework": "Spark MLlib"
+    }
+  }
+}
