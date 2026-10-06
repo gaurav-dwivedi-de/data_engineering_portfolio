@@ -194,7 +194,7 @@ venv/
 # Generated CSV Outputs
 *.csv
 
-# If you want to keep sample CSV files,
+
 # comment the line above and instead ignore:
 # **/outputs/
 # **/reports/
