@@ -2,16 +2,12 @@ import os
 from pathlib import Path
 
 
-
 # Project Root
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 # Environment Detection
-
 
 AIRFLOW_ROOT = Path("/opt/airflow")
 
@@ -19,13 +15,11 @@ if AIRFLOW_ROOT.exists():
     PORTFOLIO_ROOT = AIRFLOW_ROOT
     W7_FOLDER = "w7"
 else:
-    PORTFOLIO_ROOT = PROJECT_ROOT
+    PORTFOLIO_ROOT = PROJECT_ROOT.parent
     W7_FOLDER = "w7_feature_engineering"
 
 
-
 # Week 7 Feature Dataset
-
 
 DEFAULT_W7_FEATURE_DATA_PATH = (
     PORTFOLIO_ROOT
@@ -45,29 +39,16 @@ W7_FEATURE_DATA_PATH = Path(
 
 # P2-W7 Data Directories
 
+DATA_DIR = PROJECT_ROOT / "data"
 
-DATA_DIR = (
-    PROJECT_ROOT
-    / "data"
-)
+PROCESSED_DATA_DIR = DATA_DIR / "processed"
 
-PROCESSED_DATA_DIR = (
-    DATA_DIR
-    / "processed"
-)
+FIGURES_DIR = PROJECT_ROOT / "figures"
 
-FIGURES_DIR = (
-    PROJECT_ROOT
-    / "figures"
-)
+MODELS_DIR = PROJECT_ROOT / "models"
 
-MODELS_DIR = (
-    PROJECT_ROOT
-    / "models"
-)
 
 # Spark-Compatible Dataset
-
 
 MLLIB_INPUT_PATH = (
     PROCESSED_DATA_DIR
@@ -84,8 +65,8 @@ MLLIB_FEATURES_PATH = (
     / "w7_mllib_features.parquet"
 )
 
-# Train / Test Datasets
 
+# Train / Test Datasets
 
 MLLIB_TRAIN_PATH = (
     PROCESSED_DATA_DIR
@@ -96,6 +77,7 @@ MLLIB_TEST_PATH = (
     PROCESSED_DATA_DIR
     / "w7_mllib_test.parquet"
 )
+
 
 # MLlib Models
 
@@ -110,9 +92,7 @@ RANDOM_FOREST_MODEL_PATH = (
 )
 
 
-
 # Evaluation Output
-
 
 EVALUATION_OUTPUT_PATH = (
     PROCESSED_DATA_DIR
@@ -124,11 +104,13 @@ PREDICTIONS_OUTPUT_PATH = (
     / "w7_mllib_predictions.parquet"
 )
 
+
 # Dataset Columns
 
 TIME_COLUMN = "time"
 
 TARGET_COLUMN = "target_temp_next_hour"
+
 
 # Spark Configuration
 
@@ -148,9 +130,7 @@ SPARK_DRIVER_MEMORY = os.getenv(
 )
 
 
-
 # MLlib Configuration
-
 
 RANDOM_SEED = 42
 
@@ -161,9 +141,7 @@ RANDOM_FOREST_NUM_TREES = 100
 RANDOM_FOREST_MAX_DEPTH = 5
 
 
-
 # Create Required Directories
-
 
 PROCESSED_DATA_DIR.mkdir(
     parents=True,
