@@ -1,0 +1,23 @@
+.
+├── Folder_structure.txt
+├── README.md
+├── data
+│   └── processed
+├── figures
+├── models
+│   ├── linear_regression
+│   └── random_forest
+├── src
+│   ├── __init__.py
+│   ├── config.py
+│   ├── evaluate.py
+│   ├── main.py
+│   ├── prepare_data.py
+│   ├── train_linear_regression.py
+│   └── train_random_forest.py
+├── structure.md
+└── tests
+    ├── __init__.py
+    └── test_mllib_pipeline.py
+
+9 directories, 12 files
