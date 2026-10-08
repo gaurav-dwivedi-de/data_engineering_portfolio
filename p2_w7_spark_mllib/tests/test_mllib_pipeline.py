@@ -1,3 +1,10 @@
+"""
+Validates the P2-W7 Spark MLlib pipeline artifacts after execution, including
+the datasets, train/test split, saved models, evaluation results, and predictions.
+It acts as the D5 validation gate without retraining models or modifying the
+existing W1-W10 production pipeline.
+"""
+
 import json
 
 import pytest
