@@ -53,6 +53,7 @@ x-airflow-common: &airflow-common
     - ./w8_weather_prediction_model:/opt/airflow/w8
     - ./w9_ml_pipeline:/opt/airflow/w9
     - ./w10_fastapi_service:/opt/airflow/w10
+    - ./p2_w7_spark_mllib:/opt/airflow/p2_w7_spark_mllib
 
 services:
 

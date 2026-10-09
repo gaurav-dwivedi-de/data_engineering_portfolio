@@ -233,3 +233,5 @@ k8/.k8-env
 *.tfstate.*
 *.tfvars
 *.tfvars.json
+# Spark MLlib generated metadata
+p2_w7_spark_mllib/models/**/metadata/

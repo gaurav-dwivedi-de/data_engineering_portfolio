@@ -1,4 +1,5 @@
-# The Code can run locally and as wll on airflow-pipeline to upload files to S3/cloud
+
+# The code can run locally and in the Airflow pipeline to upload files to S3.
 
 import logging
 import os
@@ -81,6 +82,16 @@ W9_PREDICTION_FILE = Path(
 W9_PREDICTION_S3_KEY = "predictions/weather_predictions.csv"
 
 
+# P2-W7 Spark MLlib artifacts
+
+P2_W7_ROOT = (
+    Path(__file__).resolve().parents[1]
+    / "p2_w7_spark_mllib"
+)
+
+MLLIB_S3_PREFIX = "mllib/"
+
+
 def upload_file(local_file, s3_key, description):
     """Upload one local file to S3."""
 
@@ -121,9 +132,7 @@ def upload_file(local_file, s3_key, description):
             f"Failed to upload {description}."
         ) from exc
 
-    s3_uri = (
-        f"s3://{S3_BUCKET_NAME}/{s3_key}"
-    )
+    s3_uri = f"s3://{S3_BUCKET_NAME}/{s3_key}"
 
     logger.info(
         "%s upload successful: %s",
@@ -132,6 +141,10 @@ def upload_file(local_file, s3_key, description):
     )
 
     return s3_uri
+
+
+# Original W7-W9 upload functions
+# Their paths and S3 keys remain unchanged.
 
 
 def upload_w7_features():
@@ -183,8 +196,88 @@ def upload_w9_predictions():
         "W9 prediction dataset",
     )
 
+
+# P2-W7 recursive directory upload
+
+
+def upload_directory(local_dir, s3_prefix):
+    """Upload a directory recursively, preserving relative paths."""
+
+    local_dir = Path(local_dir)
+
+    if not local_dir.is_dir():
+        raise FileNotFoundError(
+            f"P2-W7 directory not found: {local_dir}"
+        )
+
+    files = sorted(
+        path
+        for path in local_dir.rglob("*")
+        if path.is_file()
+        and not path.name.endswith(".crc")
+    )
+
+    if not files:
+        logger.info(
+            "No files to upload in directory: %s",
+            local_dir,
+        )
+        return
+
+    for local_file in files:
+        relative_path = local_file.relative_to(local_dir)
+
+        s3_key = (
+            f"{s3_prefix.rstrip('/')}/"
+            f"{relative_path.as_posix()}"
+        )
+
+        upload_file(
+            local_file,
+            s3_key,
+            f"P2-W7 artifact: {relative_path.as_posix()}",
+        )
+
+
+def upload_p2_w7_artifacts():
+    """Upload P2-W7 processed data, figures and models to S3."""
+
+    directories = {
+        "data/processed": P2_W7_ROOT / "data" / "processed",
+        "figures": P2_W7_ROOT / "figures",
+        "models": P2_W7_ROOT / "models",
+    }
+
+    if not P2_W7_ROOT.is_dir():
+        raise FileNotFoundError(
+            f"P2-W7 project directory not found: {P2_W7_ROOT}"
+        )
+
+    for relative_path, directory in directories.items():
+        if not directory.is_dir():
+            raise FileNotFoundError(
+                f"P2-W7 {relative_path} directory not found: "
+                f"{directory}"
+            )
+
+        upload_directory(
+            directory,
+            f"{MLLIB_S3_PREFIX.rstrip('/')}/{relative_path}",
+        )
+
+    logger.info(
+        "P2-W7 artifacts uploaded to s3://%s/%s",
+        S3_BUCKET_NAME,
+        MLLIB_S3_PREFIX,
+    )
+
+
+# Airflow upload entry point
+# Keep the original Airflow absolute paths unchanged.
+
+
 def upload_airflow_artifacts():
-    """Upload selected W7-W9 artifacts from Airflow."""
+    """Upload W7-W9 and P2-W7 artifacts from Airflow."""
 
     # W7 feature dataset
     upload_file(
@@ -225,6 +318,12 @@ def upload_airflow_artifacts():
         "All selected W7-W9 artifacts uploaded successfully."
     )
 
+    # P2-W7 Spark MLlib artifacts
+    upload_p2_w7_artifacts()
+
+
+# Local execution entry point
+
 
 if __name__ == "__main__":
     upload_w7_features()
@@ -232,3 +331,4 @@ if __name__ == "__main__":
     upload_w8_scaler()
     upload_w8_metrics()
     upload_w9_predictions()
+    upload_p2_w7_artifacts()
