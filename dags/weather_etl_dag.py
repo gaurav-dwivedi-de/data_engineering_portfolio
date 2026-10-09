@@ -37,6 +37,7 @@ W6_PATH = "/opt/airflow/w6"
 W7_PATH = "/opt/airflow/w7"
 W8_PATH = "/opt/airflow/w8"
 W9_PATH = "/opt/airflow/w9"
+P2_W7_PATH = "/opt/airflow/p2_w7_spark_mllib"
 
 
 # =====================================================
@@ -267,6 +268,17 @@ with DAG(
         module="src.upload_to_minio",
     )
 
+
+    # =================================================
+    # P2-W7 — SPARK MLLIB
+    # =================================================
+
+    run_p2_w7_mllib_pipeline = create_project_task(
+        task_id="run_p2_w7_mllib_pipeline",
+        project_dir=P2_W7_PATH,
+        module="src.main",
+    )
+
     # =================================================
     # CLOUD STORAGE
     # =================================================
@@ -332,6 +344,7 @@ with DAG(
         >> run_w8_pipeline
         >> run_w9_pipeline
         >> upload_prediction_to_minio
+        >> run_p2_w7_mllib_pipeline
         >> upload_artifacts_to_s3
         >> refresh_applications_task
         >> end_task

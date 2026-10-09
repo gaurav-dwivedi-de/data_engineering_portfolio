@@ -24,12 +24,18 @@
 │   │   ├── P2-W5-D3.md
 │   │   ├── P2-W5-D4.md
 │   │   └── P2-W5-D5.md
-│   └── P2-W6
-│       ├── P2-W6-D1.md
-│       ├── P2-W6-D2.md
-│       ├── P2-W6-D3.md
-│       ├── P2-W6-D4.md
-│       └── P2-W6-D5.md
+│   ├── P2-W6
+│   │   ├── P2-W6-D1.md
+│   │   ├── P2-W6-D2.md
+│   │   ├── P2-W6-D3.md
+│   │   ├── P2-W6-D4.md
+│   │   └── P2-W6-D5.md
+│   └── P2-W7
+│       ├── P2-W7-D1.md
+│       ├── P2-W7-D2.md
+│       ├── P2-W7-D3.md
+│       ├── P2-W7-D4.md
+│       └── P2-W7-D5.md
 ├── config
 ├── dags
 │   └── weather_etl_dag.py
@@ -71,11 +77,34 @@
 │   ├── config.py
 │   ├── create_db.py
 │   └── test_cloud_storage.py
+├── p2_w7_spark_mllib
+│   ├── Folder_structure.txt
+│   ├── README.md
+│   ├── data
+│   │   └── processed
+│   ├── figures
+│   ├── models
+│   │   ├── linear_regression
+│   │   ├── mllib_linear_regression
+│   │   ├── mllib_linear_regression_scaler
+│   │   ├── mllib_random_forest
+│   │   └── random_forest
+│   ├── src
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── evaluate.py
+│   │   ├── main.py
+│   │   ├── prepare_data.py
+│   │   ├── train_linear_regression.py
+│   │   └── train_random_forest.py
+│   ├── structure.md
+│   └── tests
+│       ├── __init__.py
+│       └── test_mllib_pipeline.py
 ├── requirements.txt
 ├── s3_test.txt
 ├── s3_test_downloaded.txt
 ├── terraform
-│   ├── README.md
 │   ├── data.tf
 │   ├── instance.tf
 │   ├── network.tf
@@ -196,6 +225,9 @@
 │   ├── data
 │   │   ├── processed
 │   │   └── raw
+│   ├── models
+│   │   ├── mllib_linear_regression
+│   │   └── mllib_random_forest
 │   ├── src
 │   │   ├── config.py
 │   │   ├── features.py
@@ -247,4 +279,4 @@
 │       └── figures
 └── workflow.md
 
-73 directories, 175 files
+89 directories, 191 files
