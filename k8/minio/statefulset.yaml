@@ -15,7 +15,8 @@ spec:
     spec:
       containers:
         - name: minio
-          image: quay.io/minio/minio:latest
+          image: cgr.dev/chainguard/minio:latest
+          imagePullPolicy: IfNotPresent
           args:
             - server
             - /data
