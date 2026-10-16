@@ -105,6 +105,7 @@
 ├── requirements.txt
 ├── s3_test.txt
 ├── s3_test_downloaded.txt
+├── state
 ├── terraform
 │   ├── data.tf
 │   ├── instance.tf
@@ -280,4 +281,4 @@
 │       └── figures
 └── workflow.md
 
-89 directories, 192 files
+90 directories, 192 files
