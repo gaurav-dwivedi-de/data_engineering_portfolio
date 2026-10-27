@@ -224,3 +224,6 @@ k8/.k8-env
 *.tfvars.json
 # Spark MLlib generated metadata
 p2_w7_spark_mllib/models/**/metadata/
+
+# Local MLflow tracking database
+mlflow.db

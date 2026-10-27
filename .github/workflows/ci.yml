@@ -311,7 +311,24 @@ jobs:
               echo 'Dashboard is ready.'
 
               echo '========================================'
-              echo '7. Applying Kubernetes Ingress'
+              echo '7. Deploying MLflow'
+              echo '========================================'
+
+              sed "s|IMAGE_TAG|${IMAGE_TAG}|g" \
+                \$REPO/k8/mlflow/deployment.yaml \
+                | sudo k3s kubectl apply -f -
+
+              sudo k3s kubectl apply \
+                -f \$REPO/k8/mlflow/service.yaml
+
+              sudo k3s kubectl rollout status \
+                deployment/mlflow-tracking \
+                --timeout=180s
+
+              echo 'MLflow is ready.'
+
+              echo '========================================'
+              echo '8. Applying Kubernetes Ingress'
               echo '========================================'
 
               sudo k3s kubectl apply \
