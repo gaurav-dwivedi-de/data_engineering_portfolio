@@ -314,7 +314,7 @@ jobs:
               echo '7. Deploying MLflow'
               echo '========================================'
 
-              sed "s|IMAGE_TAG|${IMAGE_TAG}|g" \
+              sed \"s|IMAGE_TAG|\${IMAGE_TAG}|g\" \
                 \$REPO/k8/mlflow/deployment.yaml \
                 | sudo k3s kubectl apply -f -
 
