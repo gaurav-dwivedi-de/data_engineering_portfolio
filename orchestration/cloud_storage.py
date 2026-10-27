@@ -197,10 +197,57 @@ def upload_w9_predictions():
     )
 
 
+def delete_s3_prefix(s3_prefix):
+    """Delete existing S3 objects under a specific prefix."""
+
+    prefix = f"{s3_prefix.strip('/')}/"
+    paginator = s3_client.get_paginator("list_objects_v2")
+    deleted_count = 0
+
+    for page in paginator.paginate(
+        Bucket=S3_BUCKET_NAME,
+        Prefix=prefix,
+    ):
+        objects = [
+            {"Key": obj["Key"]}
+            for obj in page.get("Contents", [])
+        ]
+
+        for start in range(0, len(objects), 1000):
+            batch = objects[start:start + 1000]
+
+            if not batch:
+                continue
+
+            response = s3_client.delete_objects(
+                Bucket=S3_BUCKET_NAME,
+                Delete={
+                    "Objects": batch,
+                    "Quiet": True,
+                },
+            )
+
+            errors = response.get("Errors", [])
+
+            if errors:
+                raise RuntimeError(
+                    f"Failed to delete S3 objects under {prefix}: "
+                    f"{errors}"
+                )
+
+            deleted_count += len(batch)
+
+    logger.info(
+        "Deleted %s existing objects under s3://%s/%s",
+        deleted_count,
+        S3_BUCKET_NAME,
+        prefix,
+    )
+
 # P2-W7 recursive directory upload
 
 
-def upload_directory(local_dir, s3_prefix):
+def upload_directory(local_dir, s3_prefix, replace=False):
     """Upload a directory recursively, preserving relative paths."""
 
     local_dir = Path(local_dir)
@@ -218,11 +265,20 @@ def upload_directory(local_dir, s3_prefix):
     )
 
     if not files:
+        if replace:
+            raise FileNotFoundError(
+                f"No uploadable files found in directory: {local_dir}"
+            )
+
         logger.info(
             "No files to upload in directory: %s",
             local_dir,
         )
         return
+
+    # Delete old objects only when explicitly requested.
+    if replace:
+        delete_s3_prefix(s3_prefix)
 
     for local_file in files:
         relative_path = local_file.relative_to(local_dir)
@@ -237,6 +293,13 @@ def upload_directory(local_dir, s3_prefix):
             s3_key,
             f"P2-W7 artifact: {relative_path.as_posix()}",
         )
+
+    logger.info(
+        "Uploaded %s files to s3://%s/%s",
+        len(files),
+        S3_BUCKET_NAME,
+        s3_prefix.rstrip("/"),
+    )
 
 
 def upload_p2_w7_artifacts():
@@ -260,16 +323,44 @@ def upload_p2_w7_artifacts():
                 f"{directory}"
             )
 
-        upload_directory(
-            directory,
-            f"{MLLIB_S3_PREFIX.rstrip('/')}/{relative_path}",
-        )
+        if relative_path != "models":
+            upload_directory(
+                directory,
+                f"{MLLIB_S3_PREFIX.rstrip('/')}/{relative_path}",
+                replace=relative_path == "data/processed",
+            )
+            continue
+
+        replaceable_models = {
+            "mllib_linear_regression",
+            "mllib_linear_regression_scaler",
+            "mllib_random_forest",
+        }
+
+        for model_dir in sorted(directory.iterdir()):
+            if not model_dir.is_dir():
+                if model_dir.is_file():
+                    upload_file(
+                        model_dir,
+                        f"{MLLIB_S3_PREFIX.rstrip('/')}/models/"
+                        f"{model_dir.name}",
+                        f"P2-W7 model artifact: {model_dir.name}",
+                    )
+                continue
+
+            upload_directory(
+                model_dir,
+                f"{MLLIB_S3_PREFIX.rstrip('/')}/models/"
+                f"{model_dir.name}",
+                replace=model_dir.name in replaceable_models,
+            )
 
     logger.info(
         "P2-W7 artifacts uploaded to s3://%s/%s",
         S3_BUCKET_NAME,
         MLLIB_S3_PREFIX,
     )
+
 
 
 # Airflow upload entry point
