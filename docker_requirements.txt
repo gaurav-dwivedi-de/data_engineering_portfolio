@@ -23,3 +23,5 @@ python-dotenv
 # FastAPI
 fastapi
 uvicorn
+
+mlflow

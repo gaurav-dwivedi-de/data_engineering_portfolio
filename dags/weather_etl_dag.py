@@ -38,6 +38,7 @@ W7_PATH = "/opt/airflow/w7"
 W8_PATH = "/opt/airflow/w8"
 W9_PATH = "/opt/airflow/w9"
 P2_W7_PATH = "/opt/airflow/p2_w7_spark_mllib"
+MLFLOW_PATH = "/opt/airflow/mlflow_integration"
 
 
 # =====================================================
@@ -280,6 +281,16 @@ with DAG(
     )
 
     # =================================================
+    # MLflow Integration
+    # =================================================
+
+    run_mlflow_evaluation = create_project_task(
+        task_id="run_mlflow_evaluation",
+        project_dir=MLFLOW_PATH,
+        module="src.evaluate_models",
+    )
+
+    # =================================================
     # CLOUD STORAGE
     # =================================================
 
@@ -345,6 +356,7 @@ with DAG(
         >> run_w9_pipeline
         >> upload_prediction_to_minio
         >> run_p2_w7_mllib_pipeline
+        >> run_mlflow_evaluation
         >> upload_artifacts_to_s3
         >> refresh_applications_task
         >> end_task

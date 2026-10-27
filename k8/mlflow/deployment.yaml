@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-tracking
+  labels:
+    app: mlflow-tracking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-tracking
+  template:
+    metadata:
+      labels:
+        app: mlflow-tracking
+    spec:
+      containers:
+        - name: mlflow-tracking
+          image: ghcr.io/gaurav-dwivedi-de/data_engineering_portfolio:IMAGE_TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+          envFrom:
+            - secretRef:
+                name: weather-env
+          env:
+            - name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION
+              value: "false"
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              exec mlflow server \
+                --host 0.0.0.0 \
+                --port 5000 \
+                --workers 1 \
+                --backend-store-uri "postgresql+psycopg2://${MLFLOW_DB_USER}:${MLFLOW_DB_PASSWORD}@${MLFLOW_DB_HOST}:${MLFLOW_DB_PORT}/${MLFLOW_DB_NAME}" \
+                --artifacts-destination "s3://${S3_BUCKET_NAME}/${MLFLOW_S3_PREFIX}/" \
+                --serve-artifacts
+          resources:
+            requests:
+              cpu: 100m
+              memory: 250Mi
+            limits:
+              cpu: 500m
+              memory: 2Gi
