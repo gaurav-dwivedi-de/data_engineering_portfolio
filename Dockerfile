@@ -1,5 +1,4 @@
 # Base Airflow image
-
 FROM apache/airflow:3.3.0-python3.11
 
 USER root
