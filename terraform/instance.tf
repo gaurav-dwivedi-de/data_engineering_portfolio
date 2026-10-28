@@ -1,3 +1,4 @@
+
 resource "oci_core_instance" "weather_platform_k3s" {
   compartment_id      = var.compartment_id
   availability_domain = "lFqA:UK-LONDON-1-AD-1"
@@ -9,15 +10,15 @@ resource "oci_core_instance" "weather_platform_k3s" {
     memory_in_gbs = 12
   }
 
-  source_details {
-    source_type             = "image"
-    source_id               = "ocid1.image.oc1.uk-london-1.aaaaaaaafq3nyno7a72qsi6kkehqbpidfumkwwxjqapsj5l6qlojhrqn6mqa"
-    boot_volume_size_in_gbs = 200
-  }
+    source_details {
+      source_type             = "image"
+      source_id               = "ocid1.image.oc1.uk-london-1.aaaaaaaa5pvdbcxh4wf733ec2s77ne6yhjb2252qucz6g4lwc3zj4au6ui2a"
+      boot_volume_size_in_gbs = 47
+    }
 
   create_vnic_details {
     subnet_id        = oci_core_subnet.weather_platform_public_subnet.id
     assign_public_ip = true
-    hostname_label   = "weather-platform-k3s"
+    hostname_label = "weather-platform-vcn"
   }
 }

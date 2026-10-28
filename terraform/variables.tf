@@ -4,7 +4,6 @@ variable "compartment_id" {
   default     = "ocid1.tenancy.oc1..aaaaaaaarhdmxiuer7rn7aasjzq2xv2d5jotqnghsgsdggmzzqevav5pimya"
 }
 
-
 variable "aws_region" {
   description = "AWS region containing the Weather Intelligence Platform S3 bucket"
   type        = string
