@@ -5,8 +5,8 @@ resource "oci_core_instance" "weather_platform_k3s" {
   shape               = "VM.Standard.A1.Flex"
 
   shape_config {
-    ocpus         = 4
-    memory_in_gbs = 24
+    ocpus         = 2
+    memory_in_gbs = 12
   }
 
   source_details {
