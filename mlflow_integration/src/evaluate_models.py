@@ -21,7 +21,7 @@ from sklearn.metrics import (
     
 )
 
-from config import (
+from .config import (
     DATA_PATH,
     FEATURE_COLUMNS,
     MLFLOW_EXPERIMENT_NAME,
