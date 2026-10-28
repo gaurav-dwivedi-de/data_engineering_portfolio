@@ -65,7 +65,7 @@ spec:
               value: "/opt/airflow"
           resources:
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 512Mi
             limits:
               cpu: "1"
