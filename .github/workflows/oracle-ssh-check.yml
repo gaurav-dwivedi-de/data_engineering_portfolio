@@ -1,0 +1,29 @@
+
+name: Oracle SSH Verification
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ssh-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test SSH authentication to Oracle VM
+        env:
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
+          ORACLE_USER: ${{ secrets.ORACLE_USER }}
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_key
+          chmod 600 ~/.ssh/oracle_key
+
+          ssh \
+            -i ~/.ssh/oracle_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=15 \
+            "$ORACLE_USER@$ORACLE_HOST" \
+            'printf "SSH authentication successful\n"; hostname; whoami'
