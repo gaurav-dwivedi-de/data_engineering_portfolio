@@ -39,7 +39,12 @@ jobs:
             case "$file" in
 
               # Docker / dependency configuration
-              Dockerfile|docker_requirements.txt|requirements.txt|.github/workflows/ci.yml)
+              Dockerfile|docker_requirements.txt|requirements.txt)
+                deploy=true
+                ;;
+
+              # CI/CD deployment configuration
+              .github/workflows/ci.yml|.github/scripts/*)
                 deploy=true
                 ;;
 
@@ -147,218 +152,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate deployment script
+        run: |
+          bash -n .github/scripts/deploy-oracle-k3s.sh
+          test -s .github/scripts/deploy-oracle-k3s.sh
+
       - name: Deploy workloads to Oracle K3s
         env:
           ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
           ORACLE_USER: ${{ secrets.ORACLE_USER }}
           ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          ORACLE_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
           IMAGE_TAG: ${{ github.sha }}
-
         run: |
+          set -euo pipefail
+
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
           printf '%s\n' "$ORACLE_SSH_KEY" > ~/.ssh/oracle_k3s_key
           chmod 600 ~/.ssh/oracle_k3s_key
 
+          : "${ORACLE_KNOWN_HOSTS:?Missing ORACLE_KNOWN_HOSTS secret}"
+          printf '%s\n' "$ORACLE_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
           ssh \
             -i ~/.ssh/oracle_k3s_key \
-            -o StrictHostKeyChecking=no \
+            -o StrictHostKeyChecking=yes \
             "$ORACLE_USER@$ORACLE_HOST" \
-            "
-              set -e
-
-              REPO=/home/ubuntu/data_engineering_portfolio
-
-              echo '========================================'
-              echo 'Synchronizing repository from GitHub'
-              echo '========================================'
-
-              cd \$REPO
-
-              git fetch origin main
-              git reset --hard origin/main
-
-              echo 'Repository synchronized with GitHub.'
-              git log -1 --oneline
-
-              echo '========================================'
-              echo 'Checking Kubernetes Secret'
-              echo '========================================'
-
-              sudo k3s kubectl get secret weather-env >/dev/null
-
-              echo 'weather-env Secret exists.'
-
-              echo '========================================'
-              echo '1. Deploying PostgreSQL'
-              echo '========================================'
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/postgres/pvc.yaml
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/postgres/statefulset.yaml
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/postgres/service.yaml
-
-              sudo k3s kubectl rollout status \
-                statefulset/postgres \
-                --timeout=180s
-
-              echo 'PostgreSQL is ready.'
-
-              echo '========================================'
-              echo '2. Deploying MinIO'
-              echo '========================================'
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/minio/pvc.yaml
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/minio/statefulset.yaml
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/minio/service.yaml
-
-              sudo k3s kubectl rollout status \
-                statefulset/weather-minio \
-                --timeout=180s
-
-              echo 'MinIO is ready.'
-
-              echo '========================================'
-              echo '3. Initializing Airflow'
-              echo '========================================'
-
-              sudo k3s kubectl delete job airflow-init \
-                --ignore-not-found=true
-
-              sed \"s|INIT_IMAGE_TAG|${IMAGE_TAG}|g\" \
-                \$REPO/k8/airflow/airflow-init.yaml \
-                | sudo k3s kubectl apply -f -
-
-              sudo k3s kubectl wait \
-                --for=condition=complete \
-                job/airflow-init \
-                --timeout=300s
-
-              echo 'Airflow initialization completed.'
-
-              echo '========================================'
-              echo '4. Deploying Airflow'
-              echo '========================================'
-
-              sed \"s|IMAGE_TAG|${IMAGE_TAG}|g\" \
-                \$REPO/k8/airflow/api-server.yaml \
-                | sudo k3s kubectl apply -f -
-
-              sed \"s|IMAGE_TAG|${IMAGE_TAG}|g\" \
-                \$REPO/k8/airflow/scheduler.yaml \
-                | sudo k3s kubectl apply -f -
-
-              sed \"s|IMAGE_TAG|${IMAGE_TAG}|g\" \
-                \$REPO/k8/airflow/dag-processor.yaml \
-                | sudo k3s kubectl apply -f -
-
-              sudo k3s kubectl rollout status \
-                deployment/airflow-apiserver \
-                --timeout=180s
-
-              sudo k3s kubectl rollout status \
-                deployment/airflow-scheduler \
-                --timeout=180s
-
-              sudo k3s kubectl rollout status \
-                deployment/airflow-dag-processor \
-                --timeout=180s
-
-              echo 'Airflow workloads are ready.'
-
-              echo '========================================'
-              echo '5. Deploying FastAPI'
-              echo '========================================'
-
-              sed \"s|IMAGE_TAG|${IMAGE_TAG}|g\" \
-                \$REPO/k8/fastapi/deployment.yaml \
-                | sudo k3s kubectl apply -f -
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/fastapi/service.yaml
-
-              sudo k3s kubectl rollout status \
-                deployment/fastapi-deployment \
-                --timeout=180s
-
-              echo 'FastAPI is ready.'
-
-              echo '========================================'
-              echo '6. Deploying Dashboard'
-              echo '========================================'
-
-              sed \"s|IMAGE_TAG|${IMAGE_TAG}|g\" \
-                \$REPO/k8/dashboard/deployment.yaml \
-                | sudo k3s kubectl apply -f -
-              
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/dashboard/service.yaml
-
-              sudo k3s kubectl rollout status \
-                deployment/prediction-dashboard-deployment \
-                --timeout=180s
-            
-              echo 'Dashboard is ready.'
-
-              echo '========================================'
-              echo '7. Deploying MLflow'
-              echo '========================================'
-
-              echo "MLflow manifest source: \$REPO/k8/mlflow/deployment.yaml"
-              echo "IMAGE_TAG: \$IMAGE_TAG"
-
-              sed "s|IMAGE_TAG|\${IMAGE_TAG}|g" \
-                \$REPO/k8/mlflow/deployment.yaml \
-                | sudo k3s kubectl apply -f -
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/mlflow/service.yaml
-
-              sudo k3s kubectl rollout status \
-                deployment/mlflow-tracking \
-                --timeout=180s
-
-              echo 'MLflow is ready.'
-
-              echo '========================================'
-              echo '8. Applying Kubernetes Ingress'
-              echo '========================================'
-
-              sudo k3s kubectl apply \
-                -f \$REPO/k8/ingress.yaml
-
-              sudo k3s kubectl get ingress \
-                weather-platform-ingress
-
-              echo 'Kubernetes Ingress is ready.'
-
-              echo '========================================'
-              echo 'FINAL DEPLOYMENT STATUS'
-              echo '========================================'
-
-              sudo k3s kubectl get statefulsets
-              sudo k3s kubectl get deployments
-              sudo k3s kubectl get jobs
-              sudo k3s kubectl get pods
-
-              echo '========================================'
-              echo 'DEPLOYED IMAGE'
-              echo '========================================'
-
-              sudo k3s kubectl get deployments \
-                -o custom-columns='NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image'
-
-              echo '========================================'
-              echo 'All workloads deployed successfully.'
-              echo '========================================'
-            "
+            "IMAGE_TAG='$IMAGE_TAG' bash -s" \
+            < .github/scripts/deploy-oracle-k3s.sh
