@@ -314,21 +314,12 @@ jobs:
               echo '7. Deploying MLflow'
               echo '========================================'
 
-              echo "REPO=$REPO"
-              echo "IMAGE_TAG=$IMAGE_TAG"
-              echo "MLflow manifest source:"
-              ls -l "$REPO/k8/mlflow/deployment.yaml"
+              echo "MLflow manifest source: \$REPO/k8/mlflow/deployment.yaml"
+              echo "IMAGE_TAG: \$IMAGE_TAG"
 
-              sed "s|IMAGE_TAG|${IMAGE_TAG}|g" \
-                "$REPO/k8/mlflow/deployment.yaml" \
-                > /tmp/mlflow-deployment-rendered.yaml
-
-              echo "Rendered MLflow manifest:"
-              nl -ba /tmp/mlflow-deployment-rendered.yaml
-
-              sudo k3s kubectl apply \
-                -f /tmp/mlflow-deployment-rendered.yaml
-              
+              sed "s|IMAGE_TAG|\${IMAGE_TAG}|g" \
+                \$REPO/k8/mlflow/deployment.yaml \
+                | sudo k3s kubectl apply -f -
 
               sudo k3s kubectl apply \
                 -f \$REPO/k8/mlflow/service.yaml
