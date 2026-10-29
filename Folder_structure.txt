@@ -64,6 +64,9 @@
 │   │   ├── pvc.yaml
 │   │   ├── service.yaml
 │   │   └── statefulset.yaml
+│   ├── mlflow
+│   │   ├── deployment.yaml
+│   │   └── service.yaml
 │   └── postgres
 │       ├── README.md
 │       ├── deploy_postgres.sh
@@ -71,6 +74,17 @@
 │       ├── service.yaml
 │       └── statefulset.yaml
 ├── k8-commands.md
+├── mlflow.db
+├── mlflow_integration
+│   ├── artifacts
+│   │   └── source
+│   ├── results
+│   │   ├── p2_w8_evaluation.csv
+│   │   └── p2_w8_evaluation.json
+│   └── src
+│       ├── __init__.py
+│       ├── config.py
+│       └── evaluate_models.py
 ├── orchestration
 │   ├── __init__.py
 │   ├── check_archive.py
@@ -113,7 +127,6 @@
 │   ├── outputs.tf
 │   ├── provider.tf
 │   ├── terraform.tfstate
-│   ├── terraform.tfstate.1790340190.backup
 │   ├── terraform.tfstate.backup
 │   ├── variables.tf
 │   └── versions.tf
@@ -281,4 +294,4 @@
 │       └── figures
 └── workflow.md
 
-90 directories, 192 files
+96 directories, 199 files
