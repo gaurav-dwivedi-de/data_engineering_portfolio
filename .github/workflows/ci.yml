@@ -39,7 +39,7 @@ jobs:
             case "$file" in
 
               # Docker / dependency configuration
-              Dockerfile|docker_requirements.txt|requirements.txt)
+              Dockerfile|docker_requirements.txt|requirements.txt|.github/workflows/ci.yml)
                 deploy=true
                 ;;
 
