@@ -356,8 +356,8 @@ with DAG(
         >> run_w9_pipeline
         >> upload_prediction_to_minio
         >> run_p2_w7_mllib_pipeline
-        >> run_mlflow_evaluation
         >> upload_artifacts_to_s3
+        >> run_mlflow_evaluation
         >> refresh_applications_task
         >> end_task
     )
