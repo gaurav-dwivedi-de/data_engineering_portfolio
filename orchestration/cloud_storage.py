@@ -302,6 +302,7 @@ def upload_directory(local_dir, s3_prefix, replace=False):
     )
 
 
+
 def upload_p2_w7_artifacts():
     """Upload P2-W7 processed data, figures and models to S3."""
 
@@ -318,10 +319,27 @@ def upload_p2_w7_artifacts():
 
     for relative_path, directory in directories.items():
         if not directory.is_dir():
+            if relative_path == "figures":
+                logger.info(
+                    "Skipping optional P2-W7 figures directory: %s",
+                    directory,
+                )
+                continue
+
             raise FileNotFoundError(
                 f"P2-W7 {relative_path} directory not found: "
                 f"{directory}"
             )
+
+        if relative_path == "figures" and not any(
+            path.is_file()
+            for path in directory.rglob("*")
+        ):
+            logger.info(
+                "Skipping empty P2-W7 figures directory: %s",
+                directory,
+            )
+            continue
 
         if relative_path != "models":
             upload_directory(
@@ -360,7 +378,6 @@ def upload_p2_w7_artifacts():
         S3_BUCKET_NAME,
         MLLIB_S3_PREFIX,
     )
-
 
 
 # Airflow upload entry point
