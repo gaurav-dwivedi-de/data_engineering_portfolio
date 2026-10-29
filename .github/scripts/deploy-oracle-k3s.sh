@@ -29,6 +29,17 @@ echo "1. Deploying PostgreSQL..."
 "${KUBECTL[@]}" apply -f "$REPO/k8/postgres/service.yaml"
 "${KUBECTL[@]}" rollout status statefulset/postgres --timeout=180s
 
+echo "Initializing MLflow database..."
+"${KUBECTL[@]}" exec -i postgres-0 -n default -- \
+  psql -U airflow -d postgres \
+  < "$REPO/k8/postgres/create_mlflow_database.sql"
+
+echo "Verifying MLflow database..."
+"${KUBECTL[@]}" exec postgres-0 -n default -- \
+  psql -U airflow -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname = 'mlflow'" \
+  | grep -qx '1'
+
 echo "2. Deploying MinIO..."
 "${KUBECTL[@]}" apply -f "$REPO/k8/minio/pvc.yaml"
 "${KUBECTL[@]}" apply -f "$REPO/k8/minio/statefulset.yaml"

@@ -32,6 +32,8 @@ spec:
           env:
             - name: AIRFLOW__CORE__EXECUTOR
               value: "LocalExecutor"
+            - name: AIRFLOW__CORE__HOSTNAME_CALLABLE
+              value: "airflow.utils.net.get_host_ip_address"
             - name: AIRFLOW__CORE__AUTH_MANAGER
               value: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
