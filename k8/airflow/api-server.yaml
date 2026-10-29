@@ -6,6 +6,8 @@ metadata:
     app: airflow-apiserver
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: airflow-apiserver
