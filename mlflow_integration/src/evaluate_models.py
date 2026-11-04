@@ -23,6 +23,7 @@ from sklearn.metrics import (
 
 from .config import (
     DATA_PATH,
+    DEPLOYMENT_ENV,
     FEATURE_COLUMNS,
     MLFLOW_EXPERIMENT_NAME,
     MLFLOW_TRACKING_URI,
@@ -35,13 +36,24 @@ from .config import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_ROOT = PROJECT_ROOT / "mlflow_integration" / "artifacts" / "source"
 RESULT_ROOT = PROJECT_ROOT / "mlflow_integration" / "results"
-BUCKET = os.getenv("WEATHER_S3_BUCKET", "weather-data-lake-mlops")
-REGION = os.getenv("AWS_DEFAULT_REGION", "eu-west-2")
+
+BUCKET = os.getenv("S3_BUCKET_NAME")
+REGION = os.getenv("AWS_REGION")
+
+if not BUCKET:
+    raise RuntimeError("S3_BUCKET_NAME is not configured.")
+
+if not REGION:
+    raise RuntimeError("AWS_REGION is not configured.")
+
+MLLIB_S3_PREFIX = f"mllib/{DEPLOYMENT_ENV}/"
 
 SKLEARN_PREFIX = "models/"
-SPARK_PREFIX = "mllib/models/"
-SPARK_TEST_PREFIX = "mllib/data/processed/w7_mllib_test.parquet/"
-SPARK_EVALUATION_KEY = "mllib/data/processed/w7_mllib_evaluation.json"
+SPARK_PREFIX = f"{MLLIB_S3_PREFIX}models/"
+SPARK_TEST_PREFIX = f"{MLLIB_S3_PREFIX}data/processed/w7_mllib_test.parquet/"
+SPARK_EVALUATION_KEY = (
+    f"{MLLIB_S3_PREFIX}data/processed/w7_mllib_evaluation.json"
+)
 SKLEARN_METADATA_KEY = "models/model_metrics.json"
 
 
@@ -49,26 +61,30 @@ def download_file(s3, key: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     s3.download_file(BUCKET, key, str(destination))
 
-
 def download_prefix(s3, prefix: str, destination: Path) -> int:
     destination.mkdir(parents=True, exist_ok=True)
     count = 0
 
-    for item in s3.list_objects_v2(Bucket=BUCKET, Prefix=prefix).get(
-        "Contents", []
-    ):
-        key = item["Key"]
-        if key.endswith("/"):
-            continue
+    paginator = s3.get_paginator("list_objects_v2")
 
-        relative_key = key[len(prefix):]
-        target = destination / relative_key
-        target.parent.mkdir(parents=True, exist_ok=True)
-        s3.download_file(BUCKET, key, str(target))
-        count += 1
+    for page in paginator.paginate(Bucket=BUCKET, Prefix=prefix):
+        for item in page.get("Contents", []):
+            key = item["Key"]
+
+            if key.endswith("/"):
+                continue
+
+            relative_key = key[len(prefix):]
+            target = destination / relative_key
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+            s3.download_file(BUCKET, key, str(target))
+            count += 1
 
     if count == 0:
-        raise FileNotFoundError(f"No S3 objects found under s3://{BUCKET}/{prefix}")
+        raise FileNotFoundError(
+            f"No S3 objects found under s3://{BUCKET}/{prefix}"
+        )
 
     return count
 

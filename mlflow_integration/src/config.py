@@ -1,6 +1,9 @@
-
-from pathlib import Path
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -22,14 +25,21 @@ TIME_COLUMN = "time"
 TEST_SIZE = 0.2
 RANDOM_STATE = 42
 
-MLFLOW_TRACKING_URI = os.getenv(
-    "MLFLOW_TRACKING_URI",
-    "http://localhost:30500",
-)
+DEPLOYMENT_ENV = os.getenv("DEPLOYMENT_ENV")
+
+if DEPLOYMENT_ENV not in {"dev", "prod"}:
+    raise RuntimeError(
+        "DEPLOYMENT_ENV must be configured as 'dev' or 'prod'."
+    )
+
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+
+if not MLFLOW_TRACKING_URI:
+    raise RuntimeError("MLFLOW_TRACKING_URI is not configured.")
 
 MLFLOW_EXPERIMENT_NAME = os.getenv(
     "MLFLOW_EXPERIMENT_NAME",
-    "weather-intelligence-model-comparison",
+    f"weather-intelligence-model-comparison-{DEPLOYMENT_ENV}",
 )
 
 FEATURE_COLUMNS = [

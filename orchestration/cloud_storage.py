@@ -89,7 +89,14 @@ P2_W7_ROOT = (
     / "p2_w7_spark_mllib"
 )
 
-MLLIB_S3_PREFIX = "mllib/"
+DEPLOYMENT_ENV = os.getenv("DEPLOYMENT_ENV")
+
+if DEPLOYMENT_ENV not in {"dev", "prod"}:
+    raise RuntimeError(
+        "DEPLOYMENT_ENV must be configured as 'dev' or 'prod'."
+    )
+
+MLLIB_S3_PREFIX = f"mllib/{DEPLOYMENT_ENV}/"
 
 
 def upload_file(local_file, s3_key, description):

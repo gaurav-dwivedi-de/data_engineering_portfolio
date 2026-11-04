@@ -65,10 +65,12 @@
 │   │   ├── service.yaml
 │   │   └── statefulset.yaml
 │   ├── mlflow
+│   │   ├── README.md
 │   │   ├── deployment.yaml
 │   │   └── service.yaml
 │   └── postgres
 │       ├── README.md
+│       ├── create_mlflow_database.sql
 │       ├── deploy_postgres.sh
 │       ├── pvc.yaml
 │       ├── service.yaml
@@ -294,4 +296,4 @@
 │       └── figures
 └── workflow.md
 
-96 directories, 199 files
+96 directories, 201 files
