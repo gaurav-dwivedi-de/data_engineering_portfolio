@@ -73,7 +73,7 @@ spec:
               command:
                 - /bin/bash
                 - -c
-                - airflow jobs check --job-type SchedulerJob --hostname "$HOSTNAME"
+                - airflow jobs check --job-type SchedulerJob --hostname "$(python -c 'from airflow.utils.net import get_host_ip_address; print(get_host_ip_address())')"
             initialDelaySeconds: 180
             periodSeconds: 60
             timeoutSeconds: 30
