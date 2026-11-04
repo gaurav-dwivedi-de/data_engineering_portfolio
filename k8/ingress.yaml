@@ -35,3 +35,11 @@ spec:
                 name: airflow-apiserver
                 port:
                   number: 8080
+
+          - path: /mlflow
+            pathType: Prefix
+            backend:
+              service:
+                name: mlflow-tracking-service
+                port:
+                  number: 5000
