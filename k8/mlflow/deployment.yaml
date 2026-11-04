@@ -27,6 +27,8 @@ spec:
           env:
             - name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION
               value: "false"
+            - name: MLFLOW_SERVER_ALLOWED_HOSTS
+              value: "mlflow-tracking-service,mlflow-tracking-service:5000,localhost,localhost:30500"
             - name: AWS_REGION
               value: "eu-west-2"
             - name: AWS_DEFAULT_REGION
