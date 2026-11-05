@@ -8,6 +8,9 @@ x-airflow-common: &airflow-common
     - .env
 
   environment: &airflow-common-env
+    DEPLOYMENT_ENV: dev
+    MLFLOW_TRACKING_URI: http://host.docker.internal:30500
+
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
@@ -42,6 +45,7 @@ x-airflow-common: &airflow-common
     - ./config:/opt/airflow/config
 
     - ./orchestration:/opt/airflow/orchestration
+    - ./mlflow_integration:/opt/airflow/mlflow_integration
 
     - ./w1_weather_data_cleaner:/opt/airflow/w1
     - ./w2_weather_etl_pipeline:/opt/airflow/w2
@@ -54,6 +58,7 @@ x-airflow-common: &airflow-common
     - ./w9_ml_pipeline:/opt/airflow/w9
     - ./w10_fastapi_service:/opt/airflow/w10
     - ./p2_w7_spark_mllib:/opt/airflow/p2_w7_spark_mllib
+    
 
 services:
 
