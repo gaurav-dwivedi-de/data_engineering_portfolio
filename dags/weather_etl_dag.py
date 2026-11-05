@@ -284,10 +284,13 @@ with DAG(
     # MLflow Integration
     # =================================================
 
-    run_mlflow_evaluation = create_project_task(
+    run_mlflow_evaluation = BashOperator(
         task_id="run_mlflow_evaluation",
-        project_dir=MLFLOW_PATH,
-        module="src.evaluate_models",
+        bash_command=f"""
+        set -e
+        cd {MLFLOW_PATH}
+        python -m src.evaluate_models --log-mlflow
+        """,
     )
 
     # =================================================
