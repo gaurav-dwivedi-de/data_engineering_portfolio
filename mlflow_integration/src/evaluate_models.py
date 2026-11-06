@@ -40,6 +40,9 @@ RESULT_ROOT = PROJECT_ROOT / "mlflow_integration" / "results"
 BUCKET = os.getenv("S3_BUCKET_NAME")
 REGION = os.getenv("AWS_REGION")
 
+MLFLOW_S3_PREFIX = os.getenv("MLFLOW_S3_PREFIX", "mlflow").strip("/")
+
+
 if not BUCKET:
     raise RuntimeError("S3_BUCKET_NAME is not configured.")
 
@@ -308,14 +311,88 @@ def evaluate_spark_models(artifact_dirs: dict[str, Path]) -> list[dict]:
     finally:
         spark.stop()
 
+def cleanup_old_evaluation_runs(
+    client,
+    experiment_id: str,
+    keep_run_ids: set[str],
+) -> None:
+    from mlflow.entities import ViewType
 
+    runs = client.search_runs(
+        experiment_ids=[experiment_id],
+        run_view_type=ViewType.ALL,
+        max_results=10000,
+    )
+
+    old_runs = [
+        run
+        for run in runs
+        if run.data.tags.get("phase") == "P2-W8"
+        and run.data.tags.get("evaluation_type") == "existing_model_evaluation"
+        and run.info.run_id not in keep_run_ids
+    ]
+
+    s3 = boto3.client("s3", region_name=REGION)
+    paginator = s3.get_paginator("list_objects_v2")
+
+    deleted_objects = 0
+
+    for run in old_runs:
+        run_id = run.info.run_id
+        object_prefix = (
+            f"{MLFLOW_S3_PREFIX}/{experiment_id}/{run_id}/"
+        )
+
+        if run.info.lifecycle_stage == "active":
+            client.delete_run(run_id)
+
+        for page in paginator.paginate(
+            Bucket=BUCKET,
+            Prefix=object_prefix,
+        ):
+            objects = [
+                {"Key": item["Key"]}
+                for item in page.get("Contents", [])
+            ]
+
+            if objects:
+                response = s3.delete_objects(
+                    Bucket=BUCKET,
+                    Delete={"Objects": objects},
+                )
+
+                deleted_objects += len(
+                    response.get("Deleted", [])
+                )
+
+                errors = response.get("Errors", [])
+                if errors:
+                    raise RuntimeError(
+                        f"Failed to delete S3 artifacts for run {run_id}: "
+                        f"{errors}"
+                    )
+
+    print(
+        f"MLflow retention completed: "
+        f"kept {len(keep_run_ids)} latest runs, "
+        f"processed {len(old_runs)} old runs, "
+        f"deleted {deleted_objects} S3 objects."
+    )
 def log_to_mlflow(results: list[dict], artifact_dirs: dict[str, Path]) -> None:
     import mlflow
     from mlflow.tracking import MlflowClient
 
+    if len(results) != 4:
+        raise RuntimeError(
+            f"Expected 4 evaluation results, received {len(results)}. "
+            "MLflow retention was not executed."
+        )
+
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+    experiment = mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
     client = MlflowClient()
+
+    new_run_ids = set()
 
     for result in results:
         run_name = f"P2-W8 evaluation - {result['model_name']}"
@@ -349,8 +426,21 @@ def log_to_mlflow(results: list[dict], artifact_dirs: dict[str, Path]) -> None:
             mlflow.log_dict(result, "evaluation.json")
             mlflow.log_artifacts(str(artifact_dirs["metadata"]), "source_metadata")
 
-    print(f"Logged {len(results)} P2-W8 evaluation runs to {MLFLOW_TRACKING_URI}")
+            new_run_ids.add(mlflow.active_run().info.run_id)
 
+    if len(new_run_ids) != 4:
+        raise RuntimeError(
+            "Four new MLflow runs were not created successfully. "
+            "Old runs were preserved."
+        )
+
+    print(f"Logged {len(new_run_ids)} P2-W8 evaluation runs.")
+
+    cleanup_old_evaluation_runs(
+        client=client,
+        experiment_id=experiment.experiment_id,
+        keep_run_ids=new_run_ids,
+    )
 
 def main() -> None:
     parser = argparse.ArgumentParser(

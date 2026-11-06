@@ -10,7 +10,7 @@ spec:
     app: mlflow-tracking
   ports:
     - name: http
+      protocol: TCP
       port: 5000
       targetPort: http
       nodePort: 30500
-      protocol: TCP
