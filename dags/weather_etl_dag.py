@@ -1,5 +1,10 @@
 from datetime import datetime, timedelta
 
+import os
+import subprocess
+import sys
+from uuid import uuid4
+
 from airflow import DAG
 from airflow.decorators import task
 from airflow.operators.empty import EmptyOperator
@@ -63,6 +68,87 @@ def create_project_task(
         """,
     )
 
+
+def run_candidate_pipeline(
+    project_dir: str,
+    module: str,
+):
+    """
+    Execute a model candidate pipeline with a unique candidate ID.
+
+    The candidate ID is passed to the project through the environment
+    and returned to Airflow through XCom.
+    """
+
+    candidate_run_id = uuid4().hex
+
+    env = os.environ.copy()
+    env["CANDIDATE_RUN_ID"] = candidate_run_id
+
+    print(f"[CANDIDATE] Project: {project_dir}")
+    print(f"[CANDIDATE] Candidate Run ID: {candidate_run_id}")
+
+    subprocess.run(
+        [sys.executable, "-m", module],
+        cwd=project_dir,
+        env=env,
+        check=True,
+    )
+
+    print(
+        f"[CANDIDATE] Pipeline completed: {candidate_run_id}"
+    )
+
+    return candidate_run_id
+
+def run_mlflow_candidate_evaluation(**context):
+    """
+    Evaluate W8 and P2-W7 candidates against their registered champions.
+
+    Candidate IDs are retrieved from the upstream Airflow tasks through XCom.
+    """
+
+    ti = context["ti"]
+
+    sklearn_candidate_run_id = ti.xcom_pull(
+        task_ids="run_w8_pipeline"
+    )
+
+    spark_candidate_run_id = ti.xcom_pull(
+        task_ids="run_p2_w7_mllib_pipeline"
+    )
+
+    if not sklearn_candidate_run_id or not spark_candidate_run_id:
+        raise ValueError(
+            "Missing candidate IDs from W8 or P2-W7 XCom."
+        )
+
+    print(
+        f"[MLFLOW] Sklearn candidate: {sklearn_candidate_run_id}"
+    )
+    print(
+        f"[MLFLOW] Spark candidate: {spark_candidate_run_id}"
+    )
+
+    command = [
+        sys.executable,
+        "-m",
+        "src.evaluate_models",
+        "--evaluate-candidates",
+        "--sklearn-candidate-run-id",
+        sklearn_candidate_run_id,
+        "--spark-candidate-run-id",
+        spark_candidate_run_id,
+    ]
+
+    subprocess.run(
+        command,
+        cwd=MLFLOW_PATH,
+        env=os.environ.copy(),
+        check=True,
+    )
+
+    print("[MLFLOW] Candidate evaluation completed.")
 
 def end_pipeline():
     """
@@ -247,10 +333,13 @@ with DAG(
     # WEEK 8
     # =================================================
 
-    run_w8_pipeline = create_project_task(
+    run_w8_pipeline = PythonOperator(
         task_id="run_w8_pipeline",
-        project_dir=W8_PATH,
-        module="src.main",
+        python_callable=run_candidate_pipeline,
+        op_kwargs={
+            "project_dir": W8_PATH,
+            "module": "src.main",
+        },
     )
 
     # =================================================
@@ -274,23 +363,22 @@ with DAG(
     # P2-W7 — SPARK MLLIB
     # =================================================
 
-    run_p2_w7_mllib_pipeline = create_project_task(
+    run_p2_w7_mllib_pipeline = PythonOperator(
         task_id="run_p2_w7_mllib_pipeline",
-        project_dir=P2_W7_PATH,
-        module="src.main",
+        python_callable=run_candidate_pipeline,
+        op_kwargs={
+            "project_dir": P2_W7_PATH,
+            "module": "src.main",
+        },
     )
 
     # =================================================
     # MLflow Integration
     # =================================================
 
-    run_mlflow_evaluation = BashOperator(
+    run_mlflow_evaluation = PythonOperator(
         task_id="run_mlflow_evaluation",
-        bash_command=f"""
-        set -e
-        cd {MLFLOW_PATH}
-        python -m src.evaluate_models --log-mlflow
-        """,
+        python_callable=run_mlflow_candidate_evaluation,
     )
 
     # =================================================

@@ -1,7 +1,10 @@
+
 import logging
 
+import numpy as np
 import pandas as pd
 
+from app.config import MODEL_SOURCE
 from app.model_loader import load_model
 
 logging.basicConfig(level=logging.INFO)
@@ -9,8 +12,10 @@ logging.basicConfig(level=logging.INFO)
 
 def predict(features):
     """
-    Generate a temperature prediction using the
-    trained weather prediction model.
+    Generate a next-hour temperature prediction.
+
+    Supports legacy Joblib models and MLflow
+    registered models.
 
     Parameters
     ----------
@@ -24,19 +29,39 @@ def predict(features):
         Predicted next-hour temperature.
     """
 
-    # Load trained model and scaler
-
     model, scaler = load_model()
-
-    # Convert dictionary to DataFrame
 
     df = pd.DataFrame([features])
 
-    # Expected feature order from training
+    # Determine the expected feature order
 
-    expected_features = list(
-        model.feature_names_in_
-    )
+    if MODEL_SOURCE == "legacy":
+
+        expected_features = list(
+            model.feature_names_in_
+        )
+
+        input_schema = None
+
+    elif MODEL_SOURCE == "mlflow":
+
+        input_schema = model.metadata.get_input_schema()
+
+        if input_schema is None:
+            raise ValueError(
+                "MLflow model does not contain an input schema."
+            )
+
+        expected_features = [
+            column.name
+            for column in input_schema.inputs
+        ]
+
+    else:
+
+        raise ValueError(
+            f"Unsupported MODEL_SOURCE: {MODEL_SOURCE}"
+        )
 
     # Validate missing features
 
@@ -53,7 +78,7 @@ def predict(features):
             + ", ".join(missing_features)
         )
 
-    # Remove unexpected features
+    # Identify unexpected features
 
     extra_features = [
         feature
@@ -68,43 +93,82 @@ def predict(features):
             ", ".join(extra_features),
         )
 
-        df = df.drop(
-            columns=extra_features
-        )
-
-    # Match training feature order
+    # Match the expected feature order
 
     df = df.reindex(
         columns=expected_features
     )
 
-    # Convert all values to numeric
+    # Convert input values to the required data types
 
-    df = df.astype("float64")
+    if MODEL_SOURCE == "legacy":
+
+        df = df.astype("float64")
+
+    else:
+
+        dtype_mapping = {
+            "float": "float32",
+            "double": "float64",
+            "integer": "int32",
+            "long": "int64",
+        }
+
+        for column in input_schema.inputs:
+
+            column_type = str(column.type).split(".")[-1].lower()
+
+            if column_type not in dtype_mapping:
+
+                raise ValueError(
+                    f"Unsupported MLflow input type: "
+                    f"{column_type} for feature {column.name}"
+                )
+
+            df[column.name] = pd.to_numeric(
+                df[column.name],
+                errors="raise",
+            ).astype(
+                dtype_mapping[column_type]
+            )
 
     # Validate missing values
 
     if df.isnull().values.any():
 
         raise ValueError(
-            "Prediction input contains "
-            "missing values."
+            "Prediction input contains missing values."
         )
 
-    # Apply the same scaling used during training
+    # Validate finite numerical values
 
-    numerical_columns = df.select_dtypes(
-        include=["number"]
-    ).columns
+    if not np.isfinite(
+        df.to_numpy(dtype="float64")
+    ).all():
 
-    df = df.copy()
+        raise ValueError(
+            "Prediction input contains non-finite values."
+        )
 
-    df[numerical_columns] = scaler.transform(
-        df[numerical_columns]
-    )
+    # Apply external scaling only to legacy models
+
+    if MODEL_SOURCE == "legacy":
+
+        numerical_columns = df.select_dtypes(
+            include=["number"]
+        ).columns
+
+        df = df.copy()
+
+        df[numerical_columns] = scaler.transform(
+            df[numerical_columns]
+        )
+
+    # Generate prediction
 
     logging.info(
-        "Generating prediction..."
+        "Generating prediction using %s model...",
+        MODEL_SOURCE,
     )
 
     prediction = model.predict(df)
@@ -113,9 +177,15 @@ def predict(features):
         prediction[0]
     )
 
+    if not np.isfinite(predicted_temperature):
+
+        raise ValueError(
+            "Model returned a non-finite prediction."
+        )
+
     logging.info(
-        f"Prediction completed: "
-        f"{predicted_temperature:.2f} °C"
+        "Prediction completed: %.2f °C",
+        predicted_temperature,
     )
 
     return predicted_temperature

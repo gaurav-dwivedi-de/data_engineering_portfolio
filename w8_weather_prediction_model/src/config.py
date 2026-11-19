@@ -7,6 +7,7 @@
 # - Improve maintainability and reproducibility
 
 from pathlib import Path
+from uuid import uuid4 # modifications for P2-W8 mlflow_integration
 import os
 
 
@@ -87,6 +88,52 @@ MODEL_METRICS_PATH = (
     / "model_metrics.json"
 )
 
+
+
+# Candidate Models
+# This code block is for P2-W8
+
+CANDIDATE_RUN_ID = os.getenv(
+    "CANDIDATE_RUN_ID",
+    uuid4().hex
+)
+
+CANDIDATE_OUTPUT_DIR = (
+    MODEL_OUTPUT_DIR
+    / "candidates"
+    / CANDIDATE_RUN_ID
+)
+
+CANDIDATE_OUTPUT_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+CANDIDATE_LINEAR_MODEL_PATH = (
+    CANDIDATE_OUTPUT_DIR
+    / "linear_regression_model.pkl"
+)
+
+CANDIDATE_RANDOM_FOREST_MODEL_PATH = (
+    CANDIDATE_OUTPUT_DIR
+    / "random_forest_model.pkl"
+)
+
+CANDIDATE_BEST_MODEL_PATH = (
+    CANDIDATE_OUTPUT_DIR
+    / "best_model.pkl"
+)
+
+CANDIDATE_SCALER_PATH = (
+    CANDIDATE_OUTPUT_DIR
+    / "scaler.pkl"
+)
+
+CANDIDATE_MODEL_METRICS_PATH = (
+    CANDIDATE_OUTPUT_DIR
+    / "model_metrics.json"
+)
+
 # Figures Directory
 
 
@@ -114,7 +161,6 @@ FEATURE_IMPORTANCE_FIGURE = (
     FIGURES_DIR
     / "feature_importance.png"
 )
-
 
 # Residual Comparison Figure
 

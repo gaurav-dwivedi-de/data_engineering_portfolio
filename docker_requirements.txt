@@ -24,4 +24,4 @@ python-dotenv
 fastapi
 uvicorn
 
-mlflow
+mlflow==3.18.0

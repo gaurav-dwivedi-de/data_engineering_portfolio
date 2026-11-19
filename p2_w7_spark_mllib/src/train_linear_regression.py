@@ -4,11 +4,12 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from src.config import (
+    CANDIDATE_FEATURES_PATH,
+    CANDIDATE_LINEAR_REGRESSION_MODEL_PATH,
+    CANDIDATE_SCALER_MODEL_PATH,
+    CANDIDATE_TEST_PATH,
+    CANDIDATE_TRAIN_PATH,
     LINEAR_REGRESSION_MAX_ITER,
-    LINEAR_REGRESSION_MODEL_PATH,
-    MLLIB_FEATURES_PATH,
-    MLLIB_TEST_PATH,
-    MLLIB_TRAIN_PATH,
     RANDOM_SEED,
     SPARK_APP_NAME,
     SPARK_DRIVER_MEMORY,
@@ -19,7 +20,6 @@ from src.config import (
 
 
 TRAIN_RATIO = 0.80
-SCALER_MODEL_PATH = LINEAR_REGRESSION_MODEL_PATH.parent / "mllib_linear_regression_scaler"
 
 
 def create_spark_session():
@@ -80,9 +80,9 @@ def train_linear_regression():
     spark = create_spark_session()
 
     try:
-        print(f"Loading MLlib feature dataset: {MLLIB_FEATURES_PATH}")
+        print(f"Loading MLlib feature dataset: {CANDIDATE_FEATURES_PATH}")
 
-        df = spark.read.parquet(str(MLLIB_FEATURES_PATH))
+        df = spark.read.parquet(str(CANDIDATE_FEATURES_PATH))
 
         required_columns = [
             TIME_COLUMN,
@@ -145,15 +145,15 @@ def train_linear_regression():
             )
 
         train_df.write.mode("overwrite").parquet(
-            str(MLLIB_TRAIN_PATH)
+            str(CANDIDATE_TRAIN_PATH)
         )
 
         test_df.write.mode("overwrite").parquet(
-            str(MLLIB_TEST_PATH)
+            str(CANDIDATE_TEST_PATH)
         )
 
-        print(f"Training dataset saved: {MLLIB_TRAIN_PATH}")
-        print(f"Test dataset saved: {MLLIB_TEST_PATH}")
+        print(f"Training dataset saved: {CANDIDATE_TRAIN_PATH}")
+        print(f"Test dataset saved: {CANDIDATE_TEST_PATH}")
 
         scaler = StandardScaler(
             inputCol="features",
@@ -167,12 +167,12 @@ def train_linear_regression():
         scaler_model = scaler.fit(train_df)
 
         scaler_model.write().overwrite().save(
-            str(SCALER_MODEL_PATH)
+            str(CANDIDATE_SCALER_MODEL_PATH)
         )
 
         print(
             f"StandardScaler model saved: "
-            f"{SCALER_MODEL_PATH}"
+            f"{CANDIDATE_SCALER_MODEL_PATH}"
         )
 
         train_scaled = scaler_model.transform(train_df)
@@ -204,12 +204,12 @@ def train_linear_regression():
         fitted_model = model.fit(train_scaled)
 
         fitted_model.write().overwrite().save(
-            str(LINEAR_REGRESSION_MODEL_PATH)
+            str(CANDIDATE_LINEAR_REGRESSION_MODEL_PATH)
         )
 
         print(
             f"Linear Regression model saved: "
-            f"{LINEAR_REGRESSION_MODEL_PATH}"
+            f"{CANDIDATE_LINEAR_REGRESSION_MODEL_PATH}"
         )
 
         print(

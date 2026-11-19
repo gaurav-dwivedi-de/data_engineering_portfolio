@@ -91,7 +91,7 @@ def check_api_health():
     try:
 
         response = requests.get(
-            FASTAPI_URL,
+            f"{FASTAPI_URL}/api",
             timeout=5,
         )
 

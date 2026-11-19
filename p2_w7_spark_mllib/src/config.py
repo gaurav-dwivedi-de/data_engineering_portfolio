@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
-
-
+from uuid import uuid4 # modifications for P2-W8 mlflow_integration
 # Project Root
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +46,74 @@ FIGURES_DIR = PROJECT_ROOT / "figures"
 
 MODELS_DIR = PROJECT_ROOT / "models"
 
+CANDIDATE_RUN_ID = (
+    os.getenv("CANDIDATE_RUN_ID") or uuid4().hex
+)
+
+CANDIDATE_MODELS_DIR = (
+    MODELS_DIR / "candidates" / CANDIDATE_RUN_ID
+)
+
+CANDIDATE_DATA_DIR = (
+    DATA_DIR / "candidates" / CANDIDATE_RUN_ID
+)
+
+CANDIDATE_PROCESSED_DATA_DIR = CANDIDATE_DATA_DIR
+
+CANDIDATE_MODELS_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
+CANDIDATE_DATA_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
+CANDIDATE_LINEAR_REGRESSION_MODEL_PATH = (
+    CANDIDATE_MODELS_DIR / "mllib_linear_regression"
+)
+
+CANDIDATE_RANDOM_FOREST_MODEL_PATH = (
+    CANDIDATE_MODELS_DIR / "mllib_random_forest"
+)
+
+CANDIDATE_SCALER_MODEL_PATH = (
+    CANDIDATE_MODELS_DIR / "mllib_linear_regression_scaler"
+)
+
+CANDIDATE_INPUT_PATH = (
+    CANDIDATE_DATA_DIR / "w7_mllib_input.parquet"
+)
+
+CANDIDATE_CLEAN_PATH = (
+    CANDIDATE_DATA_DIR / "w7_mllib_clean.parquet"
+)
+
+CANDIDATE_FEATURES_PATH = (
+    CANDIDATE_DATA_DIR / "w7_mllib_features.parquet"
+)
+
+CANDIDATE_TRAIN_PATH = (
+    CANDIDATE_DATA_DIR / "w7_mllib_train.parquet"
+)
+
+CANDIDATE_TEST_PATH = (
+    CANDIDATE_DATA_DIR / "w7_mllib_test.parquet"
+)
+
+CANDIDATE_EVALUATION_OUTPUT_PATH = (
+    CANDIDATE_DATA_DIR / "w7_mllib_evaluation.json"
+)
+
+CANDIDATE_PREDICTIONS_OUTPUT_PATH = (
+    CANDIDATE_DATA_DIR / "w7_mllib_predictions.parquet"
+)
+
+CANDIDATE_RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH = (
+    CANDIDATE_DATA_DIR
+    / "w7_mllib_random_forest_predictions.parquet"
+)
 
 # Spark-Compatible Dataset
 

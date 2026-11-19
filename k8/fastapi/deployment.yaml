@@ -97,6 +97,18 @@ spec:
             - name: PYTHONUNBUFFERED
               value: "1"
 
+            - name: MODEL_SOURCE
+              value: "mlflow"
+
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow-tracking-service:5000"
+
+            - name: MLFLOW_MODEL_NAME
+              value: "weather-intelligence-sklearn-linear-regression"
+
+            - name: MLFLOW_MODEL_ALIAS
+              value: "champion"
+
             - name: MODEL_PATH
               value: "/app/model_artifacts/best_model.pkl"
 

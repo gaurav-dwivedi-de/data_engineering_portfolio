@@ -41,12 +41,11 @@ from .config import (
     TARGET_COLUMN,
     RANDOM_STATE,
     TEST_SIZE,
-    MODEL_OUTPUT_DIR,
-    LINEAR_MODEL_PATH,
-    RANDOM_FOREST_MODEL_PATH,
-    BEST_MODEL_PATH,
-    SCALER_PATH,
-    MODEL_METRICS_PATH,
+    CANDIDATE_LINEAR_MODEL_PATH,
+    CANDIDATE_RANDOM_FOREST_MODEL_PATH,
+    CANDIDATE_BEST_MODEL_PATH,
+    CANDIDATE_SCALER_PATH,
+    CANDIDATE_MODEL_METRICS_PATH,
     MODEL_COMPARISON_FIGURE,
     FEATURE_IMPORTANCE_FIGURE,
     RESIDUAL_COMPARISON_FIGURE
@@ -130,10 +129,10 @@ X_test[numerical_columns] = scaler.transform(
 
 joblib.dump(
     scaler,
-    SCALER_PATH
+    CANDIDATE_SCALER_PATH
 )
 
-print(f"Scaler saved to: {SCALER_PATH}")
+print(f"Scaler saved to: {CANDIDATE_SCALER_PATH}")
 
 # TRAIN LINEAR REGRESSION
 
@@ -419,7 +418,7 @@ if rf_metrics[2] > linear_metrics[2]:
 
     best_model = rf_model
     model_name = "Random Forest"
-    best_model_path = RANDOM_FOREST_MODEL_PATH
+    candidate_best_model_path = CANDIDATE_RANDOM_FOREST_MODEL_PATH
 
     best_mae = rf_metrics[0]
     best_rmse = rf_metrics[1]
@@ -438,7 +437,7 @@ else:
 
     best_model = linear_model
     model_name = "Linear Regression"
-    best_model_path = LINEAR_MODEL_PATH
+    candidate_best_model_path = CANDIDATE_LINEAR_MODEL_PATH
 
     best_mae = linear_metrics[0]
     best_rmse = linear_metrics[1]
@@ -457,23 +456,23 @@ else:
 
 joblib.dump(
     linear_model,
-    LINEAR_MODEL_PATH
+    CANDIDATE_LINEAR_MODEL_PATH
 )
 
 print(
     f"\nLinear Regression model saved to:\n"
-    f"{LINEAR_MODEL_PATH}"
+    f"{	CANDIDATE_LINEAR_MODEL_PATH}"
 )
 
 
 joblib.dump(
     rf_model,
-    RANDOM_FOREST_MODEL_PATH
+    CANDIDATE_RANDOM_FOREST_MODEL_PATH
 )
 
 print(
     f"\nRandom Forest model saved to:\n"
-    f"{RANDOM_FOREST_MODEL_PATH}"
+    f"{CANDIDATE_RANDOM_FOREST_MODEL_PATH}"
 )
 
 
@@ -482,12 +481,12 @@ print(
 
 joblib.dump(
     best_model,
-    BEST_MODEL_PATH
+    CANDIDATE_BEST_MODEL_PATH
 )
 
 print(
     f"\nBest model saved to:\n"
-    f"{BEST_MODEL_PATH}"
+    f"{CANDIDATE_BEST_MODEL_PATH}"
 )
 
 
@@ -507,7 +506,7 @@ metrics = {
 }
 
 with open(
-    MODEL_METRICS_PATH,
+    CANDIDATE_MODEL_METRICS_PATH,
     "w" 
 ) as file:
 
@@ -519,7 +518,7 @@ with open(
 
 print(
     f"\nModel metrics saved to:\n"
-    f"{MODEL_METRICS_PATH}"
+    f"{CANDIDATE_MODEL_METRICS_PATH}"
 )
 
 # SUMMARY
@@ -553,11 +552,11 @@ print(f"\nSelected Model     : {model_name}")
 
 print("\nSaved Files")
 
-print(f"Linear Model       : {LINEAR_MODEL_PATH}")
-print(f"Random Forest      : {RANDOM_FOREST_MODEL_PATH}")
-print(f"Best Model         : {BEST_MODEL_PATH}")
-print(f"Scaler             : {SCALER_PATH}")
-print(f"Model Metrics      : {MODEL_METRICS_PATH}")
+print(f"Linear Model       : {	CANDIDATE_LINEAR_MODEL_PATH}")
+print(f"Random Forest      : {CANDIDATE_RANDOM_FOREST_MODEL_PATH}")
+print(f"Best Model         : {CANDIDATE_BEST_MODEL_PATH}")
+print(f"Scaler             : {CANDIDATE_SCALER_PATH}")
+print(f"Model Metrics      : {CANDIDATE_MODEL_METRICS_PATH}")
 
 print("\nGenerated Figures")
 

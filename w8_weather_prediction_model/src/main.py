@@ -9,13 +9,16 @@
 
 
 from pathlib import Path
+import os
 import subprocess
 import sys
+from uuid import uuid4
 
 
 # Project Directory
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
+
 
 
 # Run Module
@@ -51,6 +54,9 @@ def main():
     """
     Execute the complete Week 8 workflow.
     """
+    os.environ.setdefault("CANDIDATE_RUN_ID", uuid4().hex)
+
+    print(f"Candidate Run ID: {os.environ['CANDIDATE_RUN_ID']}")
 
     # Train, compare and save the best model
     run_module("src.compare_models")

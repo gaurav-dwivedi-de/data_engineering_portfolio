@@ -20,7 +20,7 @@ from sklearn.metrics import (
     median_absolute_error,
     explained_variance_score,
     r2_score,
-    
+
 )
 from mlflow.tracking import MlflowClient
 
@@ -69,6 +69,19 @@ SPARK_EVALUATION_KEY = (
 )
 SKLEARN_METADATA_KEY = "models/model_metrics.json"
 
+def resolve_project_dir(*directory_names: str) -> Path:
+    """Resolve project directories across local and container layouts."""
+
+    for directory_name in directory_names:
+        candidate = PROJECT_ROOT / directory_name
+
+        if candidate.is_dir():
+            return candidate
+
+    raise FileNotFoundError(
+        f"Could not locate any of these project directories: "
+        f"{directory_names}"
+    )
 
 def download_file(s3, key: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -237,15 +250,16 @@ def evaluate_sklearn_models(artifact_dir: Path) -> list[dict]:
 def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
     """Compare scikit-learn candidates against registered champion models."""
 
-    from sklearn.pipeline import Pipeline
-
     if not candidate_run_id:
         raise ValueError("Candidate run ID is required.")
 
-    project_root = Path(__file__).resolve().parents[2]
+    w8_project_dir = resolve_project_dir(
+        "w8",
+        "w8_weather_prediction_model",
+    )
+
     candidate_dir = (
-        project_root
-        / "w8_weather_prediction_model"
+        w8_project_dir
         / "models"
         / "candidates"
         / candidate_run_id
@@ -504,17 +518,17 @@ def evaluate_spark_candidates(candidate_run_id: str) -> dict:
     if not candidate_run_id:
         raise ValueError("Candidate run ID is required.")
 
-    project_root = Path(__file__).resolve().parents[2]
+    spark_project_dir = resolve_project_dir("p2_w7_spark_mllib")
+
     candidate_root = (
-        project_root
-        / "p2_w7_spark_mllib"
+        spark_project_dir
         / "models"
         / "candidates"
         / candidate_run_id
     )
+
     candidate_test_path = (
-        project_root
-        / "p2_w7_spark_mllib"
+        spark_project_dir
         / "data"
         / "candidates"
         / candidate_run_id
@@ -831,6 +845,26 @@ def log_candidate_evaluations(results: dict[str, dict]) -> list[str]:
             print(f"Reusing existing evaluation run: {model_key} ({existing_run_id})")
             continue
 
+        comparison = result["comparison"]
+        candidate_metrics = result["candidate_metrics"]
+        incumbent_metrics = result["incumbent_metrics"]
+
+        accepted = bool(comparison["accepted"])
+
+        framework = (
+            "scikit-learn"
+            if model_key.startswith("sklearn_")
+            else "Spark MLlib"
+        )
+
+        algorithm = (
+            "linear_regression"
+            if "linear_regression" in model_key
+            else "random_forest"
+        )
+
+        run_name = f"Candidate evaluation - {model_key}"
+
         with mlflow.start_run(
             experiment_id=experiment.experiment_id,
             run_name=run_name,
@@ -904,7 +938,12 @@ def log_candidate_model_artifacts(
 
     from sklearn.pipeline import Pipeline
 
-    from pyspark.ml.regression import RandomForestRegressionModel
+    from pyspark.ml import PipelineModel
+    from pyspark.ml.feature import StandardScalerModel
+    from pyspark.ml.regression import (
+        LinearRegressionModel,
+        RandomForestRegressionModel,
+    )
     from pyspark.sql import SparkSession
 
     if len(results) != 4 or len(evaluation_run_ids) != 4:
@@ -912,7 +951,6 @@ def log_candidate_model_artifacts(
             "Expected four candidate results and four evaluation run IDs."
         )
 
-    project_root = Path(__file__).resolve().parents[2]
     model_uris = {}
 
     for (model_key, result), evaluation_run_id in zip(
@@ -922,13 +960,14 @@ def log_candidate_model_artifacts(
             print(f"Skipping rejected candidate: {model_key}")
             continue
 
+        candidate_project_dir = (
+            resolve_project_dir("w8", "w8_weather_prediction_model")
+            if model_key.startswith("sklearn_")
+            else resolve_project_dir("p2_w7_spark_mllib")
+        )
+
         candidate_dir = (
-            project_root
-            / (
-                "w8_weather_prediction_model"
-                if model_key.startswith("sklearn_")
-                else "p2_w7_spark_mllib"
-            )
+            candidate_project_dir
             / "models"
             / "candidates"
             / result["candidate_run_id"]
@@ -982,7 +1021,10 @@ def log_candidate_model_artifacts(
                     **model_log_kwargs,
                 )
 
-            elif model_key == "spark_random_forest":
+            elif model_key in (
+                "spark_linear_regression",
+                "spark_random_forest",
+            ):
                 spark = (
                     SparkSession.builder
                     .appName("P2-W8-Candidate-Model-Logging")
@@ -997,14 +1039,40 @@ def log_candidate_model_artifacts(
                 spark.sparkContext.setLogLevel("ERROR")
 
                 try:
-                    candidate_model = RandomForestRegressionModel.load(
-                        str(candidate_dir / "mllib_random_forest")
-                    )
+                    if model_key == "spark_linear_regression":
+                        scaler_model = StandardScalerModel.load(
+                            str(
+                                candidate_dir
+                                / "mllib_linear_regression_scaler"
+                            )
+                        )
+
+                        candidate_model = LinearRegressionModel.load(
+                            str(
+                                candidate_dir
+                                / "mllib_linear_regression"
+                            )
+                        )
+
+                        candidate_model.setFeaturesCol("scaled_features")
+
+                        candidate_pipeline = PipelineModel(
+                            stages=[
+                                scaler_model,
+                                candidate_model,
+                            ]
+                        )
+
+                    else:
+                        candidate_pipeline = RandomForestRegressionModel.load(
+                            str(candidate_dir / "mllib_random_forest")
+                        )
 
                     model_info = mlflow.spark.log_model(
-                        spark_model=candidate_model,
-                        artifact_path="candidate_model",
+                        spark_model=candidate_pipeline,
+                        name="candidate_model",
                     )
+
                 finally:
                     spark.stop()
 
@@ -1024,9 +1092,14 @@ def log_candidate_model_artifacts(
                 f"Logged {model_key}: {model_info.model_uri}"
             )
 
-    if len(model_uris) != 3:
+    expected_accepted = sum(
+        bool(result["comparison"]["accepted"])
+        for result in results.values()
+    )
+
+    if len(model_uris) != expected_accepted:
         raise RuntimeError(
-            f"Expected three accepted model artifacts, "
+            f"Expected {expected_accepted} accepted model artifacts, "
             f"logged {len(model_uris)}."
         )
 
@@ -1102,9 +1175,14 @@ def register_accepted_candidates(
             f"version {version.version} ({version.status})"
         )
 
-    if len(registered_versions) != 3:
+    expected_accepted = sum(
+        bool(result["comparison"]["accepted"])
+        for result in results.values()
+    )
+
+    if len(registered_versions) != expected_accepted:
         raise RuntimeError(
-            f"Expected three registered candidates, "
+            f"Expected {expected_accepted} registered candidates, "
             f"received {len(registered_versions)}."
         )
 
@@ -1200,7 +1278,7 @@ def main() -> None:
 
         return
 
-    
+
     RESULT_ROOT.mkdir(parents=True, exist_ok=True)
 
     for report_name in (

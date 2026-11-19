@@ -7,27 +7,18 @@ from pyspark.ml.regression import RandomForestRegressionModel
 from pyspark.sql import SparkSession
 
 from src.config import (
-    EVALUATION_OUTPUT_PATH,
-    LINEAR_REGRESSION_MODEL_PATH,
-    MLLIB_TEST_PATH,
-    PREDICTIONS_OUTPUT_PATH,
-    RANDOM_FOREST_MODEL_PATH,
+    CANDIDATE_EVALUATION_OUTPUT_PATH,
+    CANDIDATE_LINEAR_REGRESSION_MODEL_PATH,
+    CANDIDATE_PREDICTIONS_OUTPUT_PATH,
+    CANDIDATE_RANDOM_FOREST_MODEL_PATH,
+    CANDIDATE_RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH,
+    CANDIDATE_SCALER_MODEL_PATH,
+    CANDIDATE_TEST_PATH,
     SPARK_APP_NAME,
     SPARK_DRIVER_MEMORY,
     SPARK_MASTER,
     TARGET_COLUMN,
     TIME_COLUMN,
-)
-
-
-SCALER_MODEL_PATH = (
-    LINEAR_REGRESSION_MODEL_PATH.parent
-    / "mllib_linear_regression_scaler"
-)
-
-RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH = (
-    PREDICTIONS_OUTPUT_PATH.parent
-    / "w7_mllib_random_forest_predictions.parquet"
 )
 
 
@@ -91,11 +82,11 @@ def evaluate_linear_regression(test_df):
 
     print(
         f"Loading StandardScaler model: "
-        f"{SCALER_MODEL_PATH}"
+        f"{CANDIDATE_SCALER_MODEL_PATH}"
     )
 
     scaler_model = StandardScalerModel.load(
-        str(SCALER_MODEL_PATH)
+        str(CANDIDATE_SCALER_MODEL_PATH)
     )
 
     scaled_test_df = scaler_model.transform(test_df)
@@ -120,11 +111,11 @@ def evaluate_linear_regression(test_df):
 
     print(
         f"Loading Linear Regression model: "
-        f"{LINEAR_REGRESSION_MODEL_PATH}"
+        f"{CANDIDATE_LINEAR_REGRESSION_MODEL_PATH}"
     )
 
     model = LinearRegressionModel.load(
-        str(LINEAR_REGRESSION_MODEL_PATH)
+        str(CANDIDATE_LINEAR_REGRESSION_MODEL_PATH)
     )
 
     predictions = model.transform(scaled_test_df)
@@ -142,12 +133,12 @@ def evaluate_linear_regression(test_df):
     )
 
     predictions_output.write.mode("overwrite").parquet(
-        str(PREDICTIONS_OUTPUT_PATH)
+        str(CANDIDATE_PREDICTIONS_OUTPUT_PATH)
     )
 
     print(
         f"Linear Regression predictions saved: "
-        f"{PREDICTIONS_OUTPUT_PATH}"
+        f"{CANDIDATE_PREDICTIONS_OUTPUT_PATH}"
     )
 
     return metrics
@@ -158,11 +149,11 @@ def evaluate_random_forest(test_df):
 
     print(
         f"Loading Random Forest model: "
-        f"{RANDOM_FOREST_MODEL_PATH}"
+        f"{CANDIDATE_RANDOM_FOREST_MODEL_PATH}"
     )
 
     model = RandomForestRegressionModel.load(
-        str(RANDOM_FOREST_MODEL_PATH)
+        str(CANDIDATE_RANDOM_FOREST_MODEL_PATH)
     )
 
     predictions = model.transform(test_df)
@@ -180,12 +171,12 @@ def evaluate_random_forest(test_df):
     )
 
     predictions_output.write.mode("overwrite").parquet(
-        str(RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH)
+        str(CANDIDATE_RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH)
     )
 
     print(
         f"Random Forest predictions saved: "
-        f"{RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH}"
+        f"{CANDIDATE_RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH}"
     )
 
     return metrics
@@ -195,10 +186,10 @@ def evaluate_model():
     spark = create_spark_session()
 
     try:
-        print(f"Loading test dataset: {MLLIB_TEST_PATH}")
+        print(f"Loading test dataset: {CANDIDATE_TEST_PATH}")
 
         test_df = spark.read.parquet(
-            str(MLLIB_TEST_PATH)
+            str(CANDIDATE_TEST_PATH)
         )
 
         validate_test_dataset(test_df)
@@ -239,7 +230,7 @@ def evaluate_model():
         }
 
         with open(
-            EVALUATION_OUTPUT_PATH,
+            CANDIDATE_EVALUATION_OUTPUT_PATH,
             "w",
             encoding="utf-8",
         ) as file:
@@ -251,7 +242,7 @@ def evaluate_model():
 
         print(
             f"Evaluation saved: "
-            f"{EVALUATION_OUTPUT_PATH}"
+            f"{CANDIDATE_EVALUATION_OUTPUT_PATH}"
         )
 
         print("\nMLlib Model Comparison")

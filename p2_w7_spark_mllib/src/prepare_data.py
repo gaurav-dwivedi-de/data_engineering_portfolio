@@ -4,9 +4,9 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
 from src.config import (
-    MLLIB_CLEAN_PATH,
-    MLLIB_FEATURES_PATH,
-    MLLIB_INPUT_PATH,
+    CANDIDATE_CLEAN_PATH,
+    CANDIDATE_FEATURES_PATH,
+    CANDIDATE_INPUT_PATH,
     SPARK_APP_NAME,
     SPARK_DRIVER_MEMORY,
     SPARK_MASTER,
@@ -87,12 +87,12 @@ def create_spark_compatible_input(spark):
 
     pq.write_table(
         table,
-        str(MLLIB_INPUT_PATH),
+        str(CANDIDATE_INPUT_PATH),
     )
 
-    print(f"Spark-compatible input saved: {MLLIB_INPUT_PATH}")
+    print(f"Spark-compatible input saved: {CANDIDATE_INPUT_PATH}")
 
-    df = spark.read.parquet(str(MLLIB_INPUT_PATH))
+    df = spark.read.parquet(str(CANDIDATE_INPUT_PATH))
 
     print(f"Spark-compatible rows: {df.count()}")
 
@@ -173,20 +173,20 @@ def prepare_data():
         print(f"Clean rows: {clean_df.count()}")
 
         clean_df.write.mode("overwrite").parquet(
-            str(MLLIB_CLEAN_PATH)
+            str(CANDIDATE_CLEAN_PATH)
         )
 
-        print(f"Clean dataset saved: {MLLIB_CLEAN_PATH}")
+        print(f"Clean dataset saved: {CANDIDATE_CLEAN_PATH}")
 
         feature_df = create_feature_vector(clean_df)
 
         print(f"MLlib feature rows: {feature_df.count()}")
 
         feature_df.write.mode("overwrite").parquet(
-            str(MLLIB_FEATURES_PATH)
+            str(CANDIDATE_FEATURES_PATH)
         )
 
-        print(f"MLlib feature dataset saved: {MLLIB_FEATURES_PATH}")
+        print(f"MLlib feature dataset saved: {CANDIDATE_FEATURES_PATH}")
 
     finally:
         spark.stop()

@@ -13,8 +13,8 @@ import pandas as pd
 from .config import (
     DATA_PATH,
     TARGET_COLUMN,
-    BEST_MODEL_PATH,
-    SCALER_PATH
+    CANDIDATE_BEST_MODEL_PATH,
+    CANDIDATE_SCALER_PATH
 )
 
 
@@ -24,7 +24,7 @@ from .config import (
 print("Loading trained model...")
 
 model = joblib.load(
-    BEST_MODEL_PATH
+    CANDIDATE_BEST_MODEL_PATH
 )
 
 print("Model loaded successfully.")
@@ -36,7 +36,7 @@ print("Model loaded successfully.")
 print("\nLoading scaler...")
 
 scaler = joblib.load(
-    SCALER_PATH
+    CANDIDATE_SCALER_PATH
 )
 
 print("Scaler loaded successfully.")

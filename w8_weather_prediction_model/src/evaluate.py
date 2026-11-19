@@ -24,8 +24,8 @@ from .config import (
     TARGET_COLUMN,
     RANDOM_STATE,
     TEST_SIZE,
-    BEST_MODEL_PATH,
-    SCALER_PATH,
+    CANDIDATE_BEST_MODEL_PATH,
+    CANDIDATE_SCALER_PATH,
     ACTUAL_VS_PREDICTED_FIGURE,
     RESIDUAL_DISTRIBUTION_FIGURE
 )
@@ -100,7 +100,7 @@ print(f"X_test Shape : {X_test.shape}")
 print("\nLoading scaler...")
 
 scaler = joblib.load(
-    SCALER_PATH
+    CANDIDATE_SCALER_PATH
 )
 
 print("Scaler loaded successfully.")
@@ -133,7 +133,7 @@ X_test[numerical_columns] = scaler.transform(
 print("\nLoading best model...")
 
 model = joblib.load(
-    BEST_MODEL_PATH
+    CANDIDATE_BEST_MODEL_PATH
 )
 
 print("Best model loaded successfully.")
@@ -229,7 +229,7 @@ print("\n" + "=" * 60)
 print("EVALUATION VISUALIZATIONS COMPLETED")
 print("=" * 60)
 
-print(f"Best Model               : {BEST_MODEL_PATH}")
+print(f"Best Model               : {CANDIDATE_BEST_MODEL_PATH}")
 print(f"Actual vs Predicted Plot : {ACTUAL_VS_PREDICTED_FIGURE}")
 print(f"Residual Distribution    : {RESIDUAL_DISTRIBUTION_FIGURE}")
 

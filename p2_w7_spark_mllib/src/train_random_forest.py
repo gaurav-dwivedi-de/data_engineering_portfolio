@@ -3,10 +3,10 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from src.config import (
-    MLLIB_TEST_PATH,
-    MLLIB_TRAIN_PATH,
+    CANDIDATE_RANDOM_FOREST_MODEL_PATH,
+    CANDIDATE_TEST_PATH,
+    CANDIDATE_TRAIN_PATH,
     RANDOM_FOREST_MAX_DEPTH,
-    RANDOM_FOREST_MODEL_PATH,
     RANDOM_FOREST_NUM_TREES,
     RANDOM_SEED,
     SPARK_APP_NAME,
@@ -31,11 +31,11 @@ def train_random_forest():
     spark = create_spark_session()
 
     try:
-        print(f"Loading training dataset: {MLLIB_TRAIN_PATH}")
-        train_df = spark.read.parquet(str(MLLIB_TRAIN_PATH))
+        print(f"Loading training dataset: {CANDIDATE_TRAIN_PATH}")
+        train_df = spark.read.parquet(str(CANDIDATE_TRAIN_PATH))
 
-        print(f"Loading test dataset: {MLLIB_TEST_PATH}")
-        test_df = spark.read.parquet(str(MLLIB_TEST_PATH))
+        print(f"Loading test dataset: {CANDIDATE_TEST_PATH}")
+        test_df = spark.read.parquet(str(CANDIDATE_TEST_PATH))
 
         required_columns = [
             TIME_COLUMN,
@@ -118,12 +118,12 @@ def train_random_forest():
         fitted_model = model.fit(train_df)
 
         fitted_model.write().overwrite().save(
-            str(RANDOM_FOREST_MODEL_PATH)
+            str(CANDIDATE_RANDOM_FOREST_MODEL_PATH)
         )
 
         print(
             f"Random Forest model saved: "
-            f"{RANDOM_FOREST_MODEL_PATH}"
+            f"{CANDIDATE_RANDOM_FOREST_MODEL_PATH}"
         )
 
         training_predictions = fitted_model.transform(train_df)
