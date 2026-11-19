@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import boto3
 import joblib
+import mlflow
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
@@ -20,7 +22,15 @@ from sklearn.metrics import (
     r2_score,
     
 )
+from mlflow.tracking import MlflowClient
 
+from .registration import (
+    MODEL_REGISTRY,
+    ComparisonResult,
+    compare_metrics,
+    load_incumbent_model,
+    register_candidate,
+)
 from .config import (
     DATA_PATH,
     DEPLOYMENT_ENV,
@@ -224,6 +234,173 @@ def evaluate_sklearn_models(artifact_dir: Path) -> list[dict]:
     return results
 
 
+def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
+    """Compare scikit-learn candidates against registered champion models."""
+
+    from sklearn.pipeline import Pipeline
+
+    if not candidate_run_id:
+        raise ValueError("Candidate run ID is required.")
+
+    project_root = Path(__file__).resolve().parents[2]
+    candidate_dir = (
+        project_root
+        / "w8_weather_prediction_model"
+        / "models"
+        / "candidates"
+        / candidate_run_id
+    )
+
+    required_files = [
+        candidate_dir / "linear_regression_model.pkl",
+        candidate_dir / "random_forest_model.pkl",
+        candidate_dir / "scaler.pkl",
+    ]
+
+    missing = [path for path in required_files if not path.exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Missing candidate artefacts: {missing}"
+        )
+
+    if not DATA_PATH.exists():
+        raise FileNotFoundError(
+            f"Feature dataset not found: {DATA_PATH}"
+        )
+
+    df = pd.read_parquet(DATA_PATH).dropna().reset_index(drop=True)
+
+    if TARGET_COLUMN not in df.columns:
+        raise ValueError(f"Target column {TARGET_COLUMN!r} is missing.")
+
+    feature_names = [
+        column for column in df.columns
+        if column not in {TARGET_COLUMN, TIME_COLUMN}
+    ]
+
+    X = df[feature_names]
+    y = df[TARGET_COLUMN]
+
+    from sklearn.model_selection import train_test_split
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=TEST_SIZE,
+        random_state=RANDOM_STATE,
+    )
+
+    scaler = joblib.load(candidate_dir / "scaler.pkl")
+    scaler_columns = list(getattr(scaler, "feature_names_in_", []))
+
+    if not scaler_columns:
+        scaler_columns = X_train.select_dtypes(
+            include=np.number
+        ).columns.tolist()
+
+        if len(scaler_columns) != getattr(
+            scaler, "n_features_in_", len(scaler_columns)
+        ):
+            raise ValueError(
+                "Cannot safely determine candidate scaler input columns."
+            )
+
+    missing_columns = sorted(
+        set(scaler_columns) - set(X_train.columns)
+    )
+    if missing_columns:
+        raise ValueError(
+            f"Candidate scaler expects missing columns: {missing_columns}"
+        )
+
+    X_test_scaled = X_test.copy().astype("float64")
+    X_test_scaled.loc[:, scaler_columns] = scaler.transform(
+        X_test[scaler_columns]
+    )
+
+    validation_data = pd.concat(
+        [
+            X_test.reset_index(drop=True),
+            y_test.rename(TARGET_COLUMN).reset_index(drop=True),
+        ],
+        axis=1,
+    )
+
+    dataset_hash = hashlib.sha256()
+    dataset_hash.update(
+        "|".join(validation_data.columns).encode()
+    )
+    dataset_hash.update(
+        pd.util.hash_pandas_object(
+            validation_data,
+            index=False,
+        ).values.tobytes()
+    )
+
+    dataset_id = f"sha256:{dataset_hash.hexdigest()}"
+    protocol = (
+        f"sklearn_train_test_split_test_size_{TEST_SIZE}"
+        f"_random_state_{RANDOM_STATE}_v1"
+    )
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+
+    candidate_models = {
+        "sklearn_linear_regression": (
+            joblib.load(candidate_dir / "linear_regression_model.pkl")
+        ),
+        "sklearn_random_forest": (
+            joblib.load(candidate_dir / "random_forest_model.pkl")
+        ),
+    }
+
+    results = {}
+
+    for model_key, candidate_estimator in candidate_models.items():
+        incumbent = load_incumbent_model(
+            client=client,
+            model_key=model_key,
+        )
+
+        candidate_predictions = candidate_estimator.predict(
+            X_test_scaled
+        )
+        incumbent_predictions = incumbent.model.predict(X_test)
+
+        candidate_metrics = {
+            key: evaluate_predictions(y_test, candidate_predictions)[key]
+            for key in ("mae", "rmse", "r2")
+        }
+        incumbent_metrics = {
+            key: evaluate_predictions(y_test, incumbent_predictions)[key]
+            for key in ("mae", "rmse", "r2")
+        }
+
+        comparison = compare_metrics(
+            candidate_metrics,
+            incumbent_metrics,
+            candidate_dataset_id=dataset_id,
+            incumbent_dataset_id=dataset_id,
+            candidate_protocol=protocol,
+            incumbent_protocol=protocol,
+        )
+
+        results[model_key] = {
+            "candidate_run_id": candidate_run_id,
+            "registered_model_name": incumbent.registered_model_name,
+            "incumbent_version": incumbent.version,
+            "dataset_id": dataset_id,
+            "evaluation_protocol": protocol,
+            "test_rows": int(len(y_test)),
+            "candidate_metrics": candidate_metrics,
+            "incumbent_metrics": incumbent_metrics,
+            "comparison": comparison.to_dict(),
+        }
+
+    return results
+
+
 def evaluate_spark_models(artifact_dirs: dict[str, Path]) -> list[dict]:
     from pyspark.ml.evaluation import RegressionEvaluator
     from pyspark.ml.feature import StandardScalerModel
@@ -308,6 +485,177 @@ def evaluate_spark_models(artifact_dirs: dict[str, Path]) -> list[dict]:
             })
 
         return results
+    finally:
+        spark.stop()
+
+
+def evaluate_spark_candidates(candidate_run_id: str) -> dict:
+    """Compare Spark candidate models against registered champions."""
+
+    import mlflow
+    from pyspark.ml.evaluation import RegressionEvaluator
+    from pyspark.ml.feature import StandardScalerModel
+    from pyspark.ml.regression import (
+        LinearRegressionModel,
+        RandomForestRegressionModel,
+    )
+    from pyspark.sql import SparkSession
+
+    if not candidate_run_id:
+        raise ValueError("Candidate run ID is required.")
+
+    project_root = Path(__file__).resolve().parents[2]
+    candidate_root = (
+        project_root
+        / "p2_w7_spark_mllib"
+        / "models"
+        / "candidates"
+        / candidate_run_id
+    )
+    candidate_test_path = (
+        project_root
+        / "p2_w7_spark_mllib"
+        / "data"
+        / "candidates"
+        / candidate_run_id
+        / "w7_mllib_test.parquet"
+    )
+
+    required_paths = [
+        candidate_root / "mllib_linear_regression",
+        candidate_root / "mllib_linear_regression_scaler",
+        candidate_root / "mllib_random_forest",
+        candidate_test_path,
+    ]
+
+    missing = [path for path in required_paths if not path.exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Missing candidate artefacts: {missing}"
+        )
+
+    parquet_files = sorted(candidate_test_path.glob("*.parquet"))
+    if not parquet_files:
+        raise FileNotFoundError(
+            f"No Parquet data files found in {candidate_test_path}"
+        )
+
+    dataset_hash = hashlib.sha256()
+    for parquet_file in parquet_files:
+        dataset_hash.update(parquet_file.name.encode())
+        with parquet_file.open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                dataset_hash.update(chunk)
+
+    dataset_id = f"sha256:{dataset_hash.hexdigest()}"
+    protocol = "spark_chronological_split_80_20_v1"
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+
+    spark = (
+        SparkSession.builder
+        .appName("P2-W8-Spark-Candidate-Evaluation")
+        .master(os.getenv("SPARK_MASTER", "local[*]"))
+        .config(
+            "spark.driver.memory",
+            os.getenv("SPARK_DRIVER_MEMORY", "4g"),
+        )
+        .getOrCreate()
+    )
+    spark.sparkContext.setLogLevel("ERROR")
+
+    try:
+        test_df = spark.read.parquet(str(candidate_test_path))
+        test_rows = test_df.count()
+
+        if test_rows == 0:
+            raise ValueError("Candidate test dataset is empty.")
+
+        evaluator_results = {}
+        for metric in ("mae", "rmse", "r2"):
+            evaluator = RegressionEvaluator(
+                labelCol=TARGET_COLUMN,
+                predictionCol="prediction",
+                metricName=metric,
+            )
+            evaluator_results[metric] = evaluator
+
+        candidate_scaler = StandardScalerModel.load(
+            str(candidate_root / "mllib_linear_regression_scaler")
+        )
+        candidate_lr = LinearRegressionModel.load(
+            str(candidate_root / "mllib_linear_regression")
+        )
+        candidate_rf = RandomForestRegressionModel.load(
+            str(candidate_root / "mllib_random_forest")
+        )
+
+        candidate_lr_input = (
+            candidate_scaler.transform(test_df)
+            .drop("features")
+            .withColumnRenamed("scaled_features", "features")
+        )
+
+        candidate_models = {
+            "spark_linear_regression": (
+                candidate_lr,
+                candidate_lr_input,
+            ),
+            "spark_random_forest": (
+                candidate_rf,
+                test_df,
+            ),
+        }
+
+        results = {}
+
+        for model_key, (candidate_model, candidate_input) in (
+            candidate_models.items()
+        ):
+            incumbent = load_incumbent_model(
+                client=client,
+                model_key=model_key,
+                spark=spark,
+            )
+
+            candidate_predictions = candidate_model.transform(
+                candidate_input
+            )
+            incumbent_predictions = incumbent.model.transform(test_df)
+
+            candidate_metrics = {
+                metric: float(evaluator.evaluate(candidate_predictions))
+                for metric, evaluator in evaluator_results.items()
+            }
+            incumbent_metrics = {
+                metric: float(evaluator.evaluate(incumbent_predictions))
+                for metric, evaluator in evaluator_results.items()
+            }
+
+            comparison = compare_metrics(
+                candidate_metrics,
+                incumbent_metrics,
+                candidate_dataset_id=dataset_id,
+                incumbent_dataset_id=dataset_id,
+                candidate_protocol=protocol,
+                incumbent_protocol=protocol,
+            )
+
+            results[model_key] = {
+                "candidate_run_id": candidate_run_id,
+                "registered_model_name": incumbent.registered_model_name,
+                "incumbent_version": incumbent.version,
+                "dataset_id": dataset_id,
+                "evaluation_protocol": protocol,
+                "test_rows": test_rows,
+                "candidate_metrics": candidate_metrics,
+                "incumbent_metrics": incumbent_metrics,
+                "comparison": comparison.to_dict(),
+            }
+
+        return results
+
     finally:
         spark.stop()
 
@@ -442,18 +790,416 @@ def log_to_mlflow(results: list[dict], artifact_dirs: dict[str, Path]) -> None:
         keep_run_ids=new_run_ids,
     )
 
+
+def log_candidate_evaluations(results: dict[str, dict]) -> list[str]:
+    """Log candidate-versus-champion evaluation results to MLflow."""
+
+    expected_models = {
+        "sklearn_linear_regression",
+        "sklearn_random_forest",
+        "spark_linear_regression",
+        "spark_random_forest",
+    }
+
+    if set(results) != expected_models:
+        raise RuntimeError(
+            "Expected exactly four candidate evaluation results. "
+            f"Received: {sorted(results)}"
+        )
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    experiment = mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+
+    run_ids = []
+    client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+
+    for model_key, result in results.items():
+        existing_runs = client.search_runs(
+            experiment_ids=[experiment.experiment_id],
+            filter_string=(
+                "tags.evaluation_type = 'candidate_evaluation' "
+                f"and tags.candidate_run_id = '{result['candidate_run_id']}' "
+                f"and tags.model_key = '{model_key}'"
+            ),
+            order_by=["start_time DESC"],
+            max_results=1,
+        )
+
+        if existing_runs:
+            existing_run_id = existing_runs[0].info.run_id
+            run_ids.append(existing_run_id)
+            print(f"Reusing existing evaluation run: {model_key} ({existing_run_id})")
+            continue
+
+        with mlflow.start_run(
+            experiment_id=experiment.experiment_id,
+            run_name=run_name,
+        ):
+            mlflow.set_tags({
+                "phase": "P2-W8",
+                "evaluation_type": "candidate_evaluation",
+                "model_key": model_key,
+                "framework": framework,
+                "algorithm": algorithm,
+                "registered_model_name": result["registered_model_name"],
+                "candidate_run_id": result["candidate_run_id"],
+                "incumbent_version": str(result["incumbent_version"]),
+                "comparison_accepted": str(accepted).lower(),
+                "registration_eligible": str(accepted).lower(),
+                "validation_dataset_id": result["dataset_id"],
+                "evaluation_protocol": result["evaluation_protocol"],
+            })
+
+            mlflow.log_params({
+                "model_key": model_key,
+                "candidate_run_id": result["candidate_run_id"],
+                "registered_model_name": result["registered_model_name"],
+                "incumbent_version": str(result["incumbent_version"]),
+                "validation_dataset_id": result["dataset_id"],
+                "evaluation_protocol": result["evaluation_protocol"],
+                "test_rows": result["test_rows"],
+            })
+
+            for metric in ("mae", "rmse", "r2"):
+                mlflow.log_metric(
+                    f"candidate_{metric}",
+                    float(candidate_metrics[metric]),
+                )
+                mlflow.log_metric(
+                    f"incumbent_{metric}",
+                    float(incumbent_metrics[metric]),
+                )
+
+            for metric in (
+                "mae_improvement",
+                "rmse_change",
+                "r2_change",
+            ):
+                value = comparison.get(metric)
+                if value is not None and np.isfinite(value):
+                    mlflow.log_metric(metric, float(value))
+
+            mlflow.log_dict(
+                result,
+                "candidate_evaluation.json",
+            )
+
+            run_ids.append(mlflow.active_run().info.run_id)
+
+    if len(run_ids) != 4:
+        raise RuntimeError(
+            f"Expected four candidate evaluation runs, created {len(run_ids)}."
+        )
+
+    print(f"Logged {len(run_ids)} candidate evaluation runs to MLflow.")
+
+    return run_ids
+
+
+def log_candidate_model_artifacts(
+    results: dict[str, dict],
+    evaluation_run_ids: list[str],
+) -> dict[str, str]:
+    """Log accepted candidate models into their evaluation runs."""
+
+    from sklearn.pipeline import Pipeline
+
+    from pyspark.ml.regression import RandomForestRegressionModel
+    from pyspark.sql import SparkSession
+
+    if len(results) != 4 or len(evaluation_run_ids) != 4:
+        raise ValueError(
+            "Expected four candidate results and four evaluation run IDs."
+        )
+
+    project_root = Path(__file__).resolve().parents[2]
+    model_uris = {}
+
+    for (model_key, result), evaluation_run_id in zip(
+        results.items(), evaluation_run_ids
+    ):
+        if not result["comparison"]["accepted"]:
+            print(f"Skipping rejected candidate: {model_key}")
+            continue
+
+        candidate_dir = (
+            project_root
+            / (
+                "w8_weather_prediction_model"
+                if model_key.startswith("sklearn_")
+                else "p2_w7_spark_mllib"
+            )
+            / "models"
+            / "candidates"
+            / result["candidate_run_id"]
+        )
+
+        with mlflow.start_run(run_id=evaluation_run_id):
+
+            existing_run = mlflow.get_run(evaluation_run_id)
+            existing_tags = existing_run.data.tags
+
+            if existing_tags.get("candidate_model_logged") == "true":
+                existing_uri = existing_tags.get("candidate_model_uri")
+
+                if not existing_uri:
+                    raise RuntimeError(
+                        f"Model artifact tag exists but URI is missing: {model_key}"
+                    )
+
+                model_uris[model_key] = existing_uri
+                print(f"Reusing existing model artifact: {model_key}")
+                continue
+
+            if model_key.startswith("sklearn_"):
+                scaler = joblib.load(candidate_dir / "scaler.pkl")
+
+                estimator_filename = (
+                    "linear_regression_model.pkl"
+                    if model_key == "sklearn_linear_regression"
+                    else "random_forest_model.pkl"
+                )
+
+                estimator = joblib.load(
+                    candidate_dir / estimator_filename
+                )
+
+                candidate_pipeline = Pipeline([
+                    ("scaler", scaler),
+                    ("model", estimator),
+                ])
+
+                model_log_kwargs = {}
+
+                if model_key == "sklearn_random_forest":
+                    model_log_kwargs["skops_trusted_types"] = [
+                        "sklearn.tree._tree.Tree"
+                    ]
+
+                model_info = mlflow.sklearn.log_model(
+                    sk_model=candidate_pipeline,
+                    name="candidate_model",
+                    **model_log_kwargs,
+                )
+
+            elif model_key == "spark_random_forest":
+                spark = (
+                    SparkSession.builder
+                    .appName("P2-W8-Candidate-Model-Logging")
+                    .master(os.getenv("SPARK_MASTER", "local[*]"))
+                    .config(
+                        "spark.driver.memory",
+                        os.getenv("SPARK_DRIVER_MEMORY", "4g"),
+                    )
+                    .getOrCreate()
+                )
+
+                spark.sparkContext.setLogLevel("ERROR")
+
+                try:
+                    candidate_model = RandomForestRegressionModel.load(
+                        str(candidate_dir / "mllib_random_forest")
+                    )
+
+                    model_info = mlflow.spark.log_model(
+                        spark_model=candidate_model,
+                        artifact_path="candidate_model",
+                    )
+                finally:
+                    spark.stop()
+
+            else:
+                raise ValueError(
+                    f"Unsupported candidate model: {model_key}"
+                )
+
+            model_uris[model_key] = model_info.model_uri
+
+            mlflow.set_tags({
+                "candidate_model_logged": "true",
+                "candidate_model_uri": model_info.model_uri,
+            })
+
+            print(
+                f"Logged {model_key}: {model_info.model_uri}"
+            )
+
+    if len(model_uris) != 3:
+        raise RuntimeError(
+            f"Expected three accepted model artifacts, "
+            f"logged {len(model_uris)}."
+        )
+
+    return model_uris
+
+
+def register_accepted_candidates(
+    results: dict[str, dict],
+    evaluation_run_ids: list[str],
+    model_uris: dict[str, str],
+) -> dict[str, dict]:
+    """Register accepted candidate models without changing champion aliases."""
+
+    if len(results) != 4 or len(evaluation_run_ids) != 4:
+        raise ValueError(
+            "Expected four candidate results and four evaluation run IDs."
+        )
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+
+    run_ids_by_model = dict(zip(results.keys(), evaluation_run_ids))
+    registered_versions = {}
+
+    for model_key, result in results.items():
+        comparison_data = result["comparison"]
+
+        if not comparison_data["accepted"]:
+            print(f"Skipping rejected candidate registration: {model_key}")
+            continue
+
+        model_uri = model_uris.get(model_key)
+
+        if not model_uri:
+            raise RuntimeError(
+                f"Missing logged model URI for accepted candidate: {model_key}"
+            )
+
+        comparison = ComparisonResult(**comparison_data)
+
+        version = register_candidate(
+            client=client,
+            registered_model_name=result["registered_model_name"],
+            model_uri=model_uri,
+            evaluation_run_id=run_ids_by_model[model_key],
+            comparison=comparison,
+            validation_dataset_id=result["dataset_id"],
+            evaluation_protocol=result["evaluation_protocol"],
+        )
+
+        if version is None:
+            raise RuntimeError(
+                f"Registration unexpectedly skipped accepted candidate: {model_key}"
+            )
+
+        if version.status != "READY":
+            raise RuntimeError(
+                f"Model registration is not READY: "
+                f"{model_key}, version={version.version}, "
+                f"status={version.status}"
+            )
+
+        registered_versions[model_key] = {
+            "registered_model_name": result["registered_model_name"],
+            "version": version.version,
+            "status": version.status,
+            "model_uri": model_uri,
+        }
+
+        print(
+            f"Registered {model_key}: "
+            f"{result['registered_model_name']} "
+            f"version {version.version} ({version.status})"
+        )
+
+    if len(registered_versions) != 3:
+        raise RuntimeError(
+            f"Expected three registered candidates, "
+            f"received {len(registered_versions)}."
+        )
+
+    return registered_versions
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Evaluate existing sklearn and Spark MLlib models without retraining."
     )
+
     parser.add_argument(
         "--log-mlflow",
         action="store_true",
         help="Log evaluation results to MLflow after evaluation completes.",
     )
+
+    parser.add_argument(
+        "--evaluate-candidates",
+        action="store_true",
+        help="Evaluate candidate models against registered champions and log comparisons.",
+    )
+
+    parser.add_argument(
+        "--sklearn-candidate-run-id",
+        type=str,
+        help="MLflow run ID containing candidate scikit-learn models.",
+    )
+
+    parser.add_argument(
+        "--spark-candidate-run-id",
+        type=str,
+        help="MLflow run ID containing candidate Spark MLlib models.",
+    )
+
     args = parser.parse_args()
 
-    
+    if args.evaluate_candidates:
+        if not args.sklearn_candidate_run_id:
+            parser.error(
+                "--sklearn-candidate-run-id is required with --evaluate-candidates."
+            )
+
+        if not args.spark_candidate_run_id:
+            parser.error(
+                "--spark-candidate-run-id is required with --evaluate-candidates."
+            )
+
+        print("Evaluating candidate scikit-learn models...")
+        candidate_results = evaluate_sklearn_candidates(
+            args.sklearn_candidate_run_id
+        )
+
+        print("Evaluating candidate Spark MLlib models...")
+        candidate_results.update(
+            evaluate_spark_candidates(args.spark_candidate_run_id)
+        )
+
+        evaluation_run_ids = log_candidate_evaluations(candidate_results)
+
+        candidate_model_uris = log_candidate_model_artifacts(
+            candidate_results,
+            evaluation_run_ids,
+        )
+
+        registered_versions = register_accepted_candidates(
+            candidate_results,
+            evaluation_run_ids,
+            candidate_model_uris,
+        )
+
+        print("\nRegistered candidate model versions:")
+        for model_key, details in registered_versions.items():
+            print(
+                f"{model_key}: "
+                f"{details['registered_model_name']} "
+                f"version {details['version']} "
+                f"({details['status']})"
+            )
+
+        print("\nLogged candidate model artifacts:")
+        for model_key, model_uri in candidate_model_uris.items():
+            print(f"{model_key}: {model_uri}")
+
+        print("\nCandidate comparison decisions:")
+        for model_key, result in candidate_results.items():
+            decision = (
+                "ACCEPTED"
+                if result["comparison"]["accepted"]
+                else "REJECTED"
+            )
+            print(f"{model_key}: {decision}")
+
+        return
+
     
     RESULT_ROOT.mkdir(parents=True, exist_ok=True)
 
