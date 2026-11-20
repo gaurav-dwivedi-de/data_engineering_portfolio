@@ -18,7 +18,11 @@ from orchestration.check_archive import (
 )
 
 from orchestration.create_db import create_table
-from orchestration.cloud_storage import upload_airflow_artifacts
+from orchestration.cloud_storage import (
+    upload_airflow_artifacts,
+    upload_sklearn_candidate,
+    upload_spark_candidate,
+)
 
 
 # =====================================================
@@ -72,12 +76,13 @@ def create_project_task(
 def run_candidate_pipeline(
     project_dir: str,
     module: str,
+    candidate_type: str,
 ):
     """
     Execute a model candidate pipeline with a unique candidate ID.
 
-    The candidate ID is passed to the project through the environment
-    and returned to Airflow through XCom.
+    Upload candidate artifacts to S3 after successful training.
+    Return the candidate ID to Airflow through XCom.
     """
 
     candidate_run_id = uuid4().hex
@@ -86,6 +91,7 @@ def run_candidate_pipeline(
     env["CANDIDATE_RUN_ID"] = candidate_run_id
 
     print(f"[CANDIDATE] Project: {project_dir}")
+    print(f"[CANDIDATE] Candidate Type: {candidate_type}")
     print(f"[CANDIDATE] Candidate Run ID: {candidate_run_id}")
 
     subprocess.run(
@@ -97,6 +103,21 @@ def run_candidate_pipeline(
 
     print(
         f"[CANDIDATE] Pipeline completed: {candidate_run_id}"
+    )
+
+    if candidate_type == "sklearn":
+        upload_sklearn_candidate(candidate_run_id)
+
+    elif candidate_type == "spark":
+        upload_spark_candidate(candidate_run_id)
+
+    else:
+        raise ValueError(
+            f"Unsupported candidate type: {candidate_type}"
+        )
+
+    print(
+        f"[CANDIDATE] Artifacts uploaded to S3: {candidate_run_id}"
     )
 
     return candidate_run_id
@@ -339,6 +360,7 @@ with DAG(
         op_kwargs={
             "project_dir": W8_PATH,
             "module": "src.main",
+            "candidate_type": "sklearn",
         },
     )
 
@@ -369,6 +391,7 @@ with DAG(
         op_kwargs={
             "project_dir": P2_W7_PATH,
             "module": "src.main",
+            "candidate_type": "spark",
         },
     )
 

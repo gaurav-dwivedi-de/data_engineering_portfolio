@@ -1,8 +1,8 @@
 
 # The code can run locally and in the Airflow pipeline to upload files to S3.
-
 import logging
 import os
+import re
 from pathlib import Path
 
 import boto3
@@ -89,6 +89,8 @@ P2_W7_ROOT = (
     / "p2_w7_spark_mllib"
 )
 
+W8_ROOT = Path("/opt/airflow/w8")
+
 DEPLOYMENT_ENV = os.getenv("DEPLOYMENT_ENV")
 
 if DEPLOYMENT_ENV not in {"dev", "prod"}:
@@ -97,6 +99,11 @@ if DEPLOYMENT_ENV not in {"dev", "prod"}:
     )
 
 MLLIB_S3_PREFIX = f"mllib/{DEPLOYMENT_ENV}/"
+
+MLFLOW_S3_PREFIX = os.getenv(
+    "MLFLOW_S3_PREFIX",
+    "mlflow",
+).strip("/")
 
 
 def upload_file(local_file, s3_key, description):
@@ -309,6 +316,152 @@ def upload_directory(local_dir, s3_prefix, replace=False):
     )
 
 
+def validate_candidate_run_id(candidate_run_id: str) -> str:
+    """Validate the candidate UUID before constructing S3 paths."""
+
+    if not re.fullmatch(r"[0-9a-fA-F]{32}", candidate_run_id or ""):
+        raise ValueError(
+            f"Invalid candidate run ID: {candidate_run_id!r}"
+        )
+
+    return candidate_run_id
+
+
+def upload_sklearn_candidate(candidate_run_id: str):
+    """Upload all W8 candidate model artifacts to S3."""
+
+    candidate_run_id = validate_candidate_run_id(
+        candidate_run_id
+    )
+
+    candidate_dir = (
+        W8_ROOT
+        / "models"
+        / "candidates"
+        / candidate_run_id
+    )
+
+    required_files = [
+        "linear_regression_model.pkl",
+        "random_forest_model.pkl",
+        "scaler.pkl",
+    ]
+
+    missing = [
+        candidate_dir / filename
+        for filename in required_files
+        if not (candidate_dir / filename).is_file()
+    ]
+
+    if missing:
+        raise FileNotFoundError(
+            f"Missing W8 candidate files: {missing}"
+        )
+
+    s3_prefix = (
+        f"{MLFLOW_S3_PREFIX}/candidates/sklearn/"
+        f"{candidate_run_id}"
+    )
+
+    upload_directory(
+        candidate_dir,
+        s3_prefix,
+        replace=False,
+    )
+
+    logger.info(
+        "W8 candidate upload completed: s3://%s/%s/",
+        S3_BUCKET_NAME,
+        s3_prefix,
+    )
+
+
+def upload_spark_candidate(candidate_run_id: str):
+    """Upload Spark candidate models and test dataset to S3."""
+
+    candidate_run_id = validate_candidate_run_id(
+        candidate_run_id
+    )
+
+    candidate_models_dir = (
+        P2_W7_ROOT
+        / "models"
+        / "candidates"
+        / candidate_run_id
+    )
+
+    candidate_test_dir = (
+        P2_W7_ROOT
+        / "data"
+        / "candidates"
+        / candidate_run_id
+        / "w7_mllib_test.parquet"
+    )
+
+    required_model_dirs = [
+        "mllib_linear_regression",
+        "mllib_linear_regression_scaler",
+        "mllib_random_forest",
+    ]
+
+    missing_models = [
+        candidate_models_dir / name
+        for name in required_model_dirs
+        if not (
+            (candidate_models_dir / name).is_dir()
+            and any(
+                path.is_file()
+                for path in (
+                    candidate_models_dir / name
+                ).rglob("*")
+            )
+        )
+    ]
+
+    if missing_models:
+        raise FileNotFoundError(
+            f"Missing Spark candidate models: {missing_models}"
+        )
+
+    if not candidate_test_dir.is_dir():
+        raise FileNotFoundError(
+            f"Spark candidate test data not found: {candidate_test_dir}"
+        )
+
+    parquet_files = list(
+        candidate_test_dir.rglob("*.parquet")
+    )
+
+    if not parquet_files:
+        raise FileNotFoundError(
+            f"No Parquet files found in Spark candidate test dataset: "
+            f"{candidate_test_dir}"
+        )
+
+    s3_prefix = (
+        f"{MLFLOW_S3_PREFIX}/candidates/spark/"
+        f"{candidate_run_id}"
+    )
+
+    upload_directory(
+        candidate_models_dir,
+        f"{s3_prefix}/models",
+        replace=False,
+    )
+
+    upload_directory(
+        candidate_test_dir,
+        f"{s3_prefix}/data/w7_mllib_test.parquet",
+        replace=False,
+    )
+
+    logger.info(
+        "Spark candidate upload completed: s3://%s/%s/",
+        S3_BUCKET_NAME,
+        s3_prefix,
+    )
+
+
 
 def upload_p2_w7_artifacts():
     """Upload P2-W7 processed data, figures and models to S3."""
@@ -363,6 +516,13 @@ def upload_p2_w7_artifacts():
         }
 
         for model_dir in sorted(directory.iterdir()):
+            if model_dir.name == "candidates":
+                logger.info(
+                    "Skipping candidate models in production upload: %s",
+                    model_dir,
+                )
+                continue
+
             if not model_dir.is_dir():
                 if model_dir.is_file():
                     upload_file(

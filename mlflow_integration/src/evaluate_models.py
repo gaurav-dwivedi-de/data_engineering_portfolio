@@ -12,6 +12,7 @@ from pathlib import Path
 import boto3
 import joblib
 import mlflow
+import re
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
@@ -114,6 +115,130 @@ def download_prefix(s3, prefix: str, destination: Path) -> int:
 
     return count
 
+def download_candidate_artifacts(
+    sklearn_candidate_run_id: str,
+    spark_candidate_run_id: str,
+) -> None:
+    """
+    Download candidate model artifacts from S3 into their expected
+    local project directories before candidate evaluation.
+    """
+
+    candidate_ids = {
+        "sklearn": sklearn_candidate_run_id,
+        "spark": spark_candidate_run_id,
+    }
+
+    for candidate_type, candidate_run_id in candidate_ids.items():
+        if not re.fullmatch(r"[0-9a-fA-F]{32}", candidate_run_id):
+            raise ValueError(
+                f"Invalid {candidate_type} candidate run ID: "
+                f"{candidate_run_id}"
+            )
+
+    w8_project_dir = resolve_project_dir(
+        "w8",
+        "w8_weather_prediction_model",
+    )
+
+    spark_project_dir = resolve_project_dir(
+        "p2_w7_spark_mllib",
+    )
+
+    sklearn_candidate_dir = (
+        w8_project_dir
+        / "models"
+        / "candidates"
+        / sklearn_candidate_run_id
+    )
+
+    spark_candidate_dir = (
+        spark_project_dir
+        / "models"
+        / "candidates"
+        / spark_candidate_run_id
+    )
+
+    spark_test_dir = (
+        spark_project_dir
+        / "data"
+        / "candidates"
+        / spark_candidate_run_id
+        / "w7_mllib_test.parquet"
+    )
+
+    # Remove only the directories belonging to these candidate IDs.
+    for candidate_dir in (
+        sklearn_candidate_dir,
+        spark_candidate_dir,
+        spark_test_dir,
+    ):
+        if candidate_dir.exists():
+            shutil.rmtree(candidate_dir)
+
+    s3 = boto3.client("s3", region_name=REGION)
+
+    sklearn_prefix = (
+        f"{MLFLOW_S3_PREFIX}/candidates/sklearn/"
+        f"{sklearn_candidate_run_id}/"
+    )
+
+    spark_models_prefix = (
+        f"{MLFLOW_S3_PREFIX}/candidates/spark/"
+        f"{spark_candidate_run_id}/models/"
+    )
+
+    spark_test_prefix = (
+        f"{MLFLOW_S3_PREFIX}/candidates/spark/"
+        f"{spark_candidate_run_id}/data/w7_mllib_test.parquet/"
+    )
+
+    print(
+        f"Downloading scikit-learn candidate: "
+        f"{sklearn_candidate_run_id}"
+    )
+
+    sklearn_count = download_prefix(
+        s3,
+        sklearn_prefix,
+        sklearn_candidate_dir,
+    )
+
+    print(
+        f"Downloaded {sklearn_count} scikit-learn candidate files."
+    )
+
+    print(
+        f"Downloading Spark candidate models: "
+        f"{spark_candidate_run_id}"
+    )
+
+    spark_model_count = download_prefix(
+        s3,
+        spark_models_prefix,
+        spark_candidate_dir,
+    )
+
+    print(
+        f"Downloaded {spark_model_count} Spark candidate model files."
+    )
+
+    print(
+        f"Downloading Spark candidate test data: "
+        f"{spark_candidate_run_id}"
+    )
+
+    spark_test_count = download_prefix(
+        s3,
+        spark_test_prefix,
+        spark_test_dir,
+    )
+
+    print(
+        f"Downloaded {spark_test_count} Spark candidate test data files."
+    )
+
+    print("Candidate artifact downloads completed successfully.")
 
 def download_artifacts() -> dict[str, Path]:
     if ARTIFACT_ROOT.exists():
@@ -1070,7 +1195,7 @@ def log_candidate_model_artifacts(
 
                     model_info = mlflow.spark.log_model(
                         spark_model=candidate_pipeline,
-                        name="candidate_model",
+                        artifact_path="candidate_model",
                     )
 
                 finally:
@@ -1230,6 +1355,13 @@ def main() -> None:
             parser.error(
                 "--spark-candidate-run-id is required with --evaluate-candidates."
             )
+
+        print("Downloading candidate artifacts from S3...")
+
+        download_candidate_artifacts(
+            sklearn_candidate_run_id=args.sklearn_candidate_run_id,
+            spark_candidate_run_id=args.spark_candidate_run_id,
+        )
 
         print("Evaluating candidate scikit-learn models...")
         candidate_results = evaluate_sklearn_candidates(
