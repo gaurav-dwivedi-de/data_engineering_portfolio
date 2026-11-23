@@ -276,6 +276,7 @@ def upload_directory(local_dir, s3_prefix, replace=False):
         for path in local_dir.rglob("*")
         if path.is_file()
         and not path.name.endswith(".crc")
+        and path.name != "_SUCCESS"
     )
 
     if not files:
@@ -505,7 +506,7 @@ def upload_p2_w7_artifacts():
             upload_directory(
                 directory,
                 f"{MLLIB_S3_PREFIX.rstrip('/')}/{relative_path}",
-                replace=relative_path == "data/processed",
+                replace=False,
             )
             continue
 
@@ -537,7 +538,7 @@ def upload_p2_w7_artifacts():
                 model_dir,
                 f"{MLLIB_S3_PREFIX.rstrip('/')}/models/"
                 f"{model_dir.name}",
-                replace=model_dir.name in replaceable_models,
+                replace=False,
             )
 
     logger.info(

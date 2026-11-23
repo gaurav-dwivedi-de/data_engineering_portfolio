@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 
+import boto3
 import joblib
 import mlflow
 import mlflow.sklearn
@@ -35,6 +36,14 @@ SKLEARN_ROOT = ARTIFACT_ROOT / "sklearn"
 SPARK_ROOT = ARTIFACT_ROOT / "spark_mllib"
 SPARK_TEST_ROOT = ARTIFACT_ROOT / "spark_test"
 
+S3_BUCKET = os.getenv("S3_BUCKET_NAME")
+AWS_REGION = os.getenv("AWS_REGION")
+
+SPARK_BASELINE_S3_PREFIX = os.getenv(
+    "MLFLOW_BASELINE_SPARK_PREFIX",
+    "mllib/dev/models",
+).strip("/")
+
 MODEL_NAMES = {
     "sklearn_linear_regression":
         "weather-intelligence-sklearn-linear-regression",
@@ -53,6 +62,137 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+def download_s3_prefix(s3, prefix: str, destination: Path) -> int:
+    """
+    Download non-empty objects from an S3 prefix while preserving
+    the directory structure required by Spark MLlib.
+    """
+    destination.mkdir(parents=True, exist_ok=True)
+
+    paginator = s3.get_paginator("list_objects_v2")
+    downloaded = 0
+
+    for page in paginator.paginate(
+        Bucket=S3_BUCKET,
+        Prefix=f"{prefix.rstrip('/')}/",
+    ):
+        for item in page.get("Contents", []):
+            key = item["Key"]
+            size = item["Size"]
+
+            if key.endswith("/") or size == 0:
+                continue
+
+            if key.endswith(".crc"):
+                continue
+
+            relative_key = key[len(prefix.rstrip("/")) + 1:]
+            target = destination / relative_key
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+            s3.download_file(
+                S3_BUCKET,
+                key,
+                str(target),
+            )
+
+            downloaded += 1
+
+    if downloaded == 0:
+        raise FileNotFoundError(
+            f"No usable objects found under "
+            f"s3://{S3_BUCKET}/{prefix}"
+        )
+
+    return downloaded
+
+
+def download_baseline_artifacts():
+    """
+    Download the original sklearn and Spark baseline artifacts
+    from S3 into the source directories expected by this script.
+    """
+    if not S3_BUCKET:
+        raise RuntimeError("S3_BUCKET_NAME is not configured.")
+
+    if not AWS_REGION:
+        raise RuntimeError("AWS_REGION is not configured.")
+
+    s3 = boto3.client(
+        "s3",
+        region_name=AWS_REGION,
+    )
+
+    SKLEARN_ROOT.mkdir(parents=True, exist_ok=True)
+    SPARK_ROOT.mkdir(parents=True, exist_ok=True)
+
+    sklearn_files = [
+        "linear_regression_model.pkl",
+        "random_forest_model.pkl",
+        "scaler.pkl",
+    ]
+
+    for filename in sklearn_files:
+        key = f"models/{filename}"
+        destination = SKLEARN_ROOT / filename
+
+        s3.download_file(
+            S3_BUCKET,
+            key,
+            str(destination),
+        )
+
+        if not destination.exists() or destination.stat().st_size == 0:
+            raise RuntimeError(
+                f"Downloaded sklearn artifact is missing or empty: "
+                f"{destination}"
+            )
+
+        logger.info("Downloaded sklearn artifact: %s", key)
+
+    spark_downloaded = download_s3_prefix(
+        s3=s3,
+        prefix=SPARK_BASELINE_S3_PREFIX,
+        destination=SPARK_ROOT,
+    )
+
+    logger.info(
+        "Downloaded %s Spark baseline files from s3://%s/%s",
+        spark_downloaded,
+        S3_BUCKET,
+        SPARK_BASELINE_S3_PREFIX,
+    )
+
+    spark_model_dirs = [
+        SPARK_ROOT / "mllib_linear_regression",
+        SPARK_ROOT / "mllib_linear_regression_scaler",
+        SPARK_ROOT / "mllib_random_forest",
+    ]
+
+    for model_dir in spark_model_dirs:
+        data_files = [
+            path
+            for path in (model_dir / "data").glob("part-*")
+            if path.is_file() and path.stat().st_size > 0
+        ]
+
+        metadata_files = [
+            path
+            for path in (model_dir / "metadata").glob("part-*")
+            if path.is_file() and path.stat().st_size > 0
+        ]
+
+        if not data_files or not metadata_files:
+            raise RuntimeError(
+                f"Incomplete Spark baseline artifact: {model_dir}. "
+                "Expected non-empty data and metadata files."
+            )
+
+        logger.info(
+            "Validated Spark model directory: %s",
+            model_dir.name,
+        )
 
 def get_evaluation_runs(client, experiment_id):
     runs = client.search_runs(
@@ -102,27 +242,48 @@ def get_evaluation_runs(client, experiment_id):
     return evaluation_runs
 
 
+def get_initial_baseline_version(client, model_name):
+    """
+    Return a READY model version whose source run is tagged
+    as an initial baseline. Return None if no baseline exists.
+    """
+    versions = client.search_model_versions(
+        f"name = '{model_name}'"
+    )
+
+    baseline_versions = []
+
+    for version in versions:
+        if version.status != "READY":
+            continue
+
+        if not version.run_id:
+            continue
+
+        run = client.get_run(version.run_id)
+
+        if run.data.tags.get("registration_type") == "initial_baseline":
+            baseline_versions.append(version)
+
+    if not baseline_versions:
+        return None
+
+    return max(
+        baseline_versions,
+        key=lambda version: int(version.version),
+    )
+
+
 def get_or_create_registered_model(client, model_name):
+    """
+    Ensure that the registered model exists.
+    Do not skip registration merely because a candidate version exists.
+    """
     try:
-        registered = client.get_registered_model(model_name)
-        versions = client.search_model_versions(
-            f"name = '{model_name}'"
-        )
-
-        if versions:
-            version_numbers = sorted(
-                int(version.version) for version in versions
-            )
-
-            logger.info(
-                "%s already has versions %s. Skipping registration.",
-                model_name,
-                version_numbers,
-            )
-            return False
+        client.get_registered_model(model_name)
 
         logger.info(
-            "%s exists but has no versions. Continuing registration.",
+            "Registered model already exists: %s",
             model_name,
         )
 
@@ -131,6 +292,11 @@ def get_or_create_registered_model(client, model_name):
             raise
 
         client.create_registered_model(model_name)
+
+        logger.info(
+            "Created registered model: %s",
+            model_name,
+        )
 
     return True
 
@@ -159,7 +325,19 @@ def register_sklearn_model(
 ):
     model_name = MODEL_NAMES[model_key]
 
-    if not get_or_create_registered_model(client, model_name):
+    get_or_create_registered_model(client, model_name)
+
+    existing_baseline = get_initial_baseline_version(
+        client,
+        model_name,
+    )
+
+    if existing_baseline is not None:
+        logger.info(
+            "Initial baseline already exists for %s: version %s. Skipping.",
+            model_name,
+            existing_baseline.version,
+        )
         return
 
     estimator = joblib.load(SKLEARN_ROOT / estimator_filename)
@@ -217,7 +395,19 @@ def register_spark_model(
 ):
     model_name = MODEL_NAMES[model_key]
 
-    if not get_or_create_registered_model(client, model_name):
+    get_or_create_registered_model(client, model_name)
+
+    existing_baseline = get_initial_baseline_version(
+        client,
+        model_name,
+    )
+
+    if existing_baseline is not None:
+        logger.info(
+            "Initial baseline already exists for %s: version %s. Skipping.",
+            model_name,
+            existing_baseline.version,
+        )
         return
 
     evaluation_run = evaluation_runs[evaluation_key]
@@ -253,43 +443,92 @@ def register_spark_model(
         registered.version,
     )
 
+def ensure_champion_alias(client, model_name):
+    """
+    Create the champion alias only when it does not already exist.
+    Never replace an existing champion alias.
+    """
+    registered = client.get_registered_model(model_name)
+
+    existing_alias = registered.aliases.get("champion")
+
+    if existing_alias:
+        logger.info(
+            "Champion alias already exists for %s: version %s. Preserving it.",
+            model_name,
+            existing_alias,
+        )
+        return
+
+    baseline_version = get_initial_baseline_version(
+        client,
+        model_name,
+    )
+
+    if baseline_version is None:
+        raise RuntimeError(
+            f"No READY initial baseline version found for {model_name}."
+        )
+
+    client.set_registered_model_alias(
+        name=model_name,
+        alias="champion",
+        version=str(baseline_version.version),
+    )
+
+    logger.info(
+        "Assigned champion alias for %s to baseline version %s.",
+        model_name,
+        baseline_version.version,
+    )
 
 def verify_registry(client):
-    logger.info("Verifying registered model versions.")
+    logger.info("Verifying registered models and champion aliases.")
 
     for model_name in MODEL_NAMES.values():
+        registered = client.get_registered_model(model_name)
+
+        baseline_version = get_initial_baseline_version(
+            client,
+            model_name,
+        )
+
+        if baseline_version is None:
+            raise RuntimeError(
+                f"No READY initial baseline version found for {model_name}."
+            )
+
+        champion_version = registered.aliases.get("champion")
+
+        if not champion_version:
+            raise RuntimeError(
+                f"Champion alias is missing for {model_name}."
+            )
+
         versions = client.search_model_versions(
             f"name = '{model_name}'"
         )
 
-        if not versions:
-            raise RuntimeError(
-                f"No registered version found for {model_name}."
-            )
-
-        version_one = next(
+        champion = next(
             (
-                version for version in versions
-                if version.version == "1"
+                version
+                for version in versions
+                if str(version.version) == str(champion_version)
             ),
             None,
         )
 
-        if version_one is None:
+        if champion is None or champion.status != "READY":
             raise RuntimeError(
-                f"Version 1 missing for {model_name}."
-            )
-
-        if version_one.status != "READY":
-            raise RuntimeError(
-                f"{model_name} version 1 status: {version_one.status}"
+                f"Champion alias for {model_name} does not point "
+                f"to a READY model version."
             )
 
         logger.info(
-            "%s | Version %s | %s",
+            "%s | Baseline version %s | Champion version %s | READY",
             model_name,
-            version_one.version,
-            version_one.status,
+            baseline_version.version,
+            champion.version,
         )
 
 
@@ -310,6 +549,12 @@ def main():
         raise RuntimeError(
             f"Experiment not found: {MLFLOW_EXPERIMENT_NAME}"
         )
+
+    logger.info("Downloading baseline artifacts from S3.")
+
+    download_baseline_artifacts()
+
+    logger.info("Baseline artifacts downloaded successfully.")
 
     required_paths = [
         SKLEARN_ROOT / "linear_regression_model.pkl",
@@ -409,6 +654,12 @@ def main():
 
     finally:
         spark.stop()
+
+    for model_name in MODEL_NAMES.values():
+        ensure_champion_alias(
+            client,
+            model_name,
+        )
 
     verify_registry(client)
 
