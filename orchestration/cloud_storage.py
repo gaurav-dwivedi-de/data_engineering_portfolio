@@ -258,8 +258,84 @@ def delete_s3_prefix(s3_prefix):
         prefix,
     )
 
-# P2-W7 recursive directory upload
 
+def validate_spark_model_directory(model_dir: Path) -> None:
+    """Validate the required data and metadata files of a Spark model."""
+
+    if not model_dir.is_dir():
+        raise FileNotFoundError(
+            f"Spark baseline model directory not found: {model_dir}"
+        )
+
+    for required_subdir in ("data", "metadata"):
+        subdir = model_dir / required_subdir
+
+        if not subdir.is_dir():
+            raise FileNotFoundError(
+                f"Missing Spark model directory: {subdir}"
+            )
+
+        valid_files = [
+            path
+            for path in subdir.rglob("*")
+            if (
+                path.is_file()
+                and path.name != "_SUCCESS"
+                and not path.name.endswith(".crc")
+                and path.stat().st_size > 0
+            )
+        ]
+
+        if not valid_files:
+            raise RuntimeError(
+                f"Incomplete Spark baseline model: {model_dir}. "
+                f"No non-empty data files found in {subdir}."
+            )
+
+    logger.info(
+        "Validated Spark baseline model: %s",
+        model_dir.name,
+    )
+
+
+def verify_s3_spark_model_directory(s3_prefix: str) -> None:
+    """Verify that a Spark model's data and metadata exist in S3."""
+
+    paginator = s3_client.get_paginator("list_objects_v2")
+
+    for required_subdir in ("data", "metadata"):
+        prefix = f"{s3_prefix}/{required_subdir}/"
+
+        valid_objects = []
+
+        for page in paginator.paginate(
+            Bucket=S3_BUCKET_NAME,
+            Prefix=prefix,
+        ):
+            for item in page.get("Contents", []):
+                key = item["Key"]
+                filename = key.rsplit("/", 1)[-1]
+
+                if (
+                    filename != "_SUCCESS"
+                    and not filename.endswith(".crc")
+                    and item["Size"] > 0
+                ):
+                    valid_objects.append(key)
+
+        if not valid_objects:
+            raise RuntimeError(
+                f"Incomplete Spark baseline in S3: "
+                f"s3://{S3_BUCKET_NAME}/{prefix}"
+            )
+
+    logger.info(
+        "Verified Spark baseline in S3: s3://%s/%s",
+        S3_BUCKET_NAME,
+        s3_prefix,
+    )
+
+# P2-W7 recursive directory upload
 
 def upload_directory(local_dir, s3_prefix, replace=False):
     """Upload a directory recursively, preserving relative paths."""
@@ -478,6 +554,26 @@ def upload_p2_w7_artifacts():
             f"P2-W7 project directory not found: {P2_W7_ROOT}"
         )
 
+    
+    required_spark_baselines = {
+        "mllib_linear_regression",
+        "mllib_linear_regression_scaler",
+        "mllib_random_forest",
+    }
+
+    models_dir = P2_W7_ROOT / "models"
+
+    if not models_dir.is_dir():
+        raise FileNotFoundError(
+            f"P2-W7 models directory not found: {models_dir}"
+        )
+
+    for model_name in sorted(required_spark_baselines):
+        validate_spark_model_directory(
+            models_dir / model_name
+        )
+
+
     for relative_path, directory in directories.items():
         if not directory.is_dir():
             if relative_path == "figures":
@@ -510,11 +606,6 @@ def upload_p2_w7_artifacts():
             )
             continue
 
-        replaceable_models = {
-            "mllib_linear_regression",
-            "mllib_linear_regression_scaler",
-            "mllib_random_forest",
-        }
 
         for model_dir in sorted(directory.iterdir()):
             if model_dir.name == "candidates":
@@ -534,12 +625,23 @@ def upload_p2_w7_artifacts():
                     )
                 continue
 
+            
+            model_s3_prefix = (
+                f"{MLLIB_S3_PREFIX.rstrip('/')}/models/"
+                f"{model_dir.name}"
+            )
+
             upload_directory(
                 model_dir,
-                f"{MLLIB_S3_PREFIX.rstrip('/')}/models/"
-                f"{model_dir.name}",
+                model_s3_prefix,
                 replace=False,
             )
+
+            if model_dir.name in required_spark_baselines:
+                verify_s3_spark_model_directory(
+                    model_s3_prefix
+                )
+
 
     logger.info(
         "P2-W7 artifacts uploaded to s3://%s/%s",
