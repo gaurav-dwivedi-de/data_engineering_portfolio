@@ -399,12 +399,20 @@ with DAG(
     # MLflow Integration
     # =================================================
 
+    register_initial_baselines = BashOperator(
+        task_id="register_initial_baselines",
+        bash_command=(
+            "python "
+            "/opt/airflow/mlflow_integration/src/register_initial_models.py"
+        ),
+    )
+
     run_mlflow_evaluation = PythonOperator(
         task_id="run_mlflow_evaluation",
         python_callable=run_mlflow_candidate_evaluation,
     )
 
-    # =================================================
+    # =================================================``
     # CLOUD STORAGE
     # =================================================
 
@@ -471,6 +479,7 @@ with DAG(
         >> upload_prediction_to_minio
         >> run_p2_w7_mllib_pipeline
         >> upload_artifacts_to_s3
+        >> register_initial_baselines
         >> run_mlflow_evaluation
         >> refresh_applications_task
         >> end_task

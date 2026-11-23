@@ -39,9 +39,16 @@ SPARK_TEST_ROOT = ARTIFACT_ROOT / "spark_test"
 S3_BUCKET = os.getenv("S3_BUCKET_NAME")
 AWS_REGION = os.getenv("AWS_REGION")
 
+DEPLOYMENT_ENV = os.getenv("DEPLOYMENT_ENV")
+
+if DEPLOYMENT_ENV not in {"dev", "prod"}:
+    raise RuntimeError(
+        "DEPLOYMENT_ENV must be configured as 'dev' or 'prod'."
+    )
+
 SPARK_BASELINE_S3_PREFIX = os.getenv(
     "MLFLOW_BASELINE_SPARK_PREFIX",
-    "mllib/dev/models",
+    f"mllib/{DEPLOYMENT_ENV}/models",
 ).strip("/")
 
 MODEL_NAMES = {
@@ -531,6 +538,47 @@ def verify_registry(client):
             champion.version,
         )
 
+def baselines_already_initialized(client):
+    """Check whether all initial baselines and champion aliases are valid."""
+
+    for model_name in MODEL_NAMES.values():
+        try:
+            registered = client.get_registered_model(model_name)
+        except Exception as exc:
+            if "RESOURCE_DOES_NOT_EXIST" in str(exc):
+                return False
+            raise
+
+        baseline = get_initial_baseline_version(
+            client,
+            model_name,
+        )
+
+        if baseline is None:
+            return False
+
+        champion_version = registered.aliases.get("champion")
+
+        if not champion_version:
+            return False
+
+        versions = client.search_model_versions(
+            f"name = '{model_name}'"
+        )
+
+        champion = next(
+            (
+                version
+                for version in versions
+                if str(version.version) == str(champion_version)
+            ),
+            None,
+        )
+
+        if champion is None or champion.status != "READY":
+            return False
+
+    return True
 
 def main():
     global client, experiment, evaluation_runs
@@ -540,6 +588,13 @@ def main():
     client = MlflowClient(
         tracking_uri=MLFLOW_TRACKING_URI
     )
+
+    if baselines_already_initialized(client):
+        logger.info(
+            "All four initial baselines and champion aliases "
+            "are already valid. Skipping registration."
+        )
+        return
 
     experiment = client.get_experiment_by_name(
         MLFLOW_EXPERIMENT_NAME
