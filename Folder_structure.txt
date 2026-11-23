@@ -86,21 +86,29 @@
 │   └── src
 │       ├── __init__.py
 │       ├── config.py
-│       └── evaluate_models.py
+│       ├── evaluate_models.py
+│       ├── register_initial_models.py
+│       ├── registration.py
+│       └── tests
 ├── orchestration
 │   ├── __init__.py
 │   ├── check_archive.py
 │   ├── cloud_storage.py
+│   ├── cloud_storage_manual.py
 │   ├── config.py
 │   ├── create_db.py
-│   └── test_cloud_storage.py
+│   └── tests
+│       ├── __init__.py
+│       └── test_candidate_uploads.py
 ├── p2_w7_spark_mllib
 │   ├── Folder_structure.txt
 │   ├── README.md
 │   ├── data
+│   │   ├── candidates
 │   │   └── processed
 │   ├── figures
 │   ├── models
+│   │   ├── candidates
 │   │   ├── linear_regression
 │   │   ├── mllib_linear_regression
 │   │   ├── mllib_linear_regression_scaler
@@ -125,9 +133,11 @@
 ├── terraform
 │   ├── data.tf
 │   ├── instance.tf
+│   ├── mlflow-security.tfplan
 │   ├── network.tf
 │   ├── outputs.tf
 │   ├── provider.tf
+│   ├── s3_lifecycle.tf
 │   ├── terraform.tfstate
 │   ├── terraform.tfstate.backup
 │   ├── variables.tf
@@ -156,6 +166,7 @@
 │   │   └── styles.py
 │   └── tests
 │       ├── __init__.py
+│       ├── test_api_client.py
 │       └── test_prediction_loader.py
 ├── w1_weather_data_cleaner
 │   ├── README.md
@@ -264,6 +275,7 @@
 │   │   └── residual_plot.png
 │   ├── models
 │   │   ├── best_model.pkl
+│   │   ├── candidates
 │   │   ├── linear_regression_model.pkl
 │   │   ├── model_metrics.json
 │   │   ├── random_forest_model.pkl
@@ -271,6 +283,7 @@
 │   └── src
 │       ├── compare_models.py
 │       ├── config.py
+│       ├── config.py.bak
 │       ├── evaluate.py
 │       ├── main.py
 │       └── predict.py
@@ -296,4 +309,4 @@
 │       └── figures
 └── workflow.md
 
-96 directories, 201 files
+101 directories, 209 files
