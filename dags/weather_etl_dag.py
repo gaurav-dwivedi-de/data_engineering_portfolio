@@ -20,6 +20,7 @@ from orchestration.check_archive import (
 from orchestration.create_db import create_table
 from orchestration.cloud_storage import (
     upload_airflow_artifacts,
+    upload_p2_w7_artifacts,
     upload_sklearn_candidate,
     upload_spark_candidate,
 )
@@ -429,23 +430,24 @@ sys.exit(0 if initialized else 1)
 PY
         }
 
-        check_baselines
-        result=$?
-
-        if [ "$result" -eq 0 ]; then
+        if check_baselines; then
             echo "Initial baselines are valid. Skipping bootstrap."
-        elif [ "$result" -eq 1 ]; then
-            echo "Initial baselines are missing or invalid."
-
-            python -m src.evaluate_models --log-mlflow
-
-            python /opt/airflow/mlflow_integration/src/register_initial_models.py
-
-            echo "Verifying baseline registration..."
-            check_baselines
         else
-            echo "Unable to inspect MLflow registry. Stopping."
-            exit 1
+            result=$?
+
+            if [ "$result" -eq 1 ]; then
+                echo "Initial baselines are missing or invalid."
+
+                python -m src.evaluate_models --log-mlflow
+
+                python /opt/airflow/mlflow_integration/src/register_initial_models.py
+
+                echo "Verifying baseline registration..."
+                check_baselines
+            else
+                echo "Unable to inspect MLflow registry. Stopping."
+                exit 1
+            fi
         fi
     """,
 )
@@ -528,6 +530,11 @@ PY
         python_callable=upload_airflow_artifacts,
     )
 
+    upload_p2_w7_artifacts_to_s3 = PythonOperator(
+        task_id="upload_p2_w7_artifacts_to_s3",
+        python_callable=upload_p2_w7_artifacts,
+    )
+
     # =================================================
     # REFRESH APPLICATIONS
     # =================================================
@@ -581,13 +588,14 @@ PY
         >> run_w5_pipeline
         >> run_w6_pipeline
         >> run_w7_pipeline
-        >> upload_artifacts_to_s3
         >> ensure_initial_mlflow_baselines
         >> run_w8_pipeline
         >> run_p2_w7_mllib_pipeline
+        >> upload_p2_w7_artifacts_to_s3
         >> run_mlflow_evaluation
         >> verify_production_champion
         >> run_w9_pipeline
+        >> upload_artifacts_to_s3
         >> upload_prediction_to_minio
         >> refresh_applications_task
         >> end_task

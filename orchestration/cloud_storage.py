@@ -696,9 +696,6 @@ def upload_airflow_artifacts():
         "All selected W7-W9 artifacts uploaded successfully."
     )
 
-    # P2-W7 Spark MLlib artifacts
-    upload_p2_w7_artifacts()
-
 
 # Local execution entry point
 
