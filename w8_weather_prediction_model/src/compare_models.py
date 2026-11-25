@@ -25,7 +25,6 @@ import joblib
 import sklearn
 print(f"scikit-learn version: {sklearn.__version__}")
 
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
@@ -87,23 +86,97 @@ print("\nTarget Shape:")
 print(y.shape)
 
 
-# TRAIN / TEST SPLIT
 
+# CHRONOLOGICAL TRAIN / TEST SPLIT
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=TEST_SIZE,
-    random_state=RANDOM_STATE
+print("\nCreating chronological train/test split...")
+
+# Ensure timestamps are in datetime format
+df["time"] = pd.to_datetime(df["time"])
+
+# Sort observations chronologically
+df = df.sort_values("time").reset_index(drop=True)
+
+# Get unique timestamps
+timestamps = (
+    df["time"]
+    .drop_duplicates()
+    .sort_values()
+    .reset_index(drop=True)
 )
 
-print("\nTrain/Test Split Complete")
+# Calculate chronological split boundary
+split_index = int(
+    len(timestamps) * (1 - TEST_SIZE)
+)
+
+if split_index == 0 or split_index >= len(timestamps):
+    raise ValueError(
+        "Insufficient timestamps for chronological splitting."
+    )
+
+# Divide timestamps into training and testing periods
+train_timestamps = timestamps.iloc[:split_index]
+test_timestamps = timestamps.iloc[split_index:]
+
+# Create training and testing datasets
+train_df = df[
+    df["time"].isin(train_timestamps)
+].copy()
+
+test_df = df[
+    df["time"].isin(test_timestamps)
+].copy()
+
+# Separate features and target
+X_train = train_df.drop(
+    columns=[
+        TARGET_COLUMN,
+        "time"
+    ]
+)
+
+X_test = test_df.drop(
+    columns=[
+        TARGET_COLUMN,
+        "time"
+    ]
+)
+
+y_train = train_df[TARGET_COLUMN]
+y_test = test_df[TARGET_COLUMN]
+
+# Validate chronological separation
+if train_df["time"].max() >= test_df["time"].min():
+    raise ValueError(
+        "Chronological split validation failed."
+    )
+
+print("\nChronological Split Complete")
+
+print("Training Period:")
+print(
+    train_df["time"].min(),
+    "to",
+    train_df["time"].max()
+)
+
+print("Testing Period:")
+print(
+    test_df["time"].min(),
+    "to",
+    test_df["time"].max()
+)
+
+print("\nTraining Rows:", len(train_df))
+print("Testing Rows :", len(test_df))
 
 print("X_train Shape:", X_train.shape)
 print("X_test Shape :", X_test.shape)
 
 print("y_train Shape:", y_train.shape)
 print("y_test Shape :", y_test.shape)
+
 
 
 # SCALE FEATURES
@@ -492,18 +565,28 @@ print(
 
 # SAVE MODEL METRICS
 
+
 metrics = {
     "model_name": model_name,
     "r2": round(best_r2, 4),
     "rmse": round(best_rmse, 4),
     "mae": round(best_mae, 4),
-    "training_rows": len(df),
+    "training_rows": len(X_train),
+    "testing_rows": len(X_test),
+    "evaluation_protocol": "chronological_train_test_split",
+    "test_size": TEST_SIZE,
+    "random_state": None,
+    "training_start": str(train_df["time"].min()),
+    "training_end": str(train_df["time"].max()),
+    "testing_start": str(test_df["time"].min()),
+    "testing_end": str(test_df["time"].max()),
     "trained_at": datetime.now(
         ZoneInfo("Europe/London")
     ).strftime(
         "%d %b %Y %H:%M"
     )
 }
+
 
 with open(
     CANDIDATE_MODEL_METRICS_PATH,

@@ -8,6 +8,8 @@ import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+from types import SimpleNamespace
 
 import boto3
 import joblib
@@ -27,10 +29,17 @@ from mlflow.tracking import MlflowClient
 
 from .registration import (
     MODEL_REGISTRY,
+    GLOBAL_PRODUCTION_MODEL,
+    GLOBAL_CHAMPION_ALIAS,
     ComparisonResult,
     compare_metrics,
     load_incumbent_model,
     register_candidate,
+    select_global_champion,
+    compare_global_candidate_to_champion,
+    register_global_champion,
+    validate_global_model_version,
+    promote_global_champion,
 )
 from .config import (
     DATA_PATH,
@@ -371,9 +380,76 @@ def evaluate_sklearn_models(artifact_dir: Path) -> list[dict]:
 
     return results
 
+def calculate_dataset_id(data: pd.DataFrame) -> str:
+    """Generate a deterministic ID from canonical evaluation observations."""
+
+    required_columns = [
+        TIME_COLUMN,
+        *FEATURE_COLUMNS,
+        TARGET_COLUMN,
+    ]
+
+    missing_columns = [
+        column
+        for column in required_columns
+        if column not in data.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing columns for dataset hashing: {missing_columns}"
+        )
+
+    canonical_data = data[required_columns].copy()
+
+    canonical_data[TIME_COLUMN] = pd.to_datetime(
+        canonical_data[TIME_COLUMN]
+    )
+
+    numeric_columns = [
+        *FEATURE_COLUMNS,
+        TARGET_COLUMN,
+    ]
+
+    for column in numeric_columns:
+        canonical_data[column] = pd.to_numeric(
+            canonical_data[column],
+            errors="raise",
+        ).astype("float64")
+
+    canonical_data = canonical_data.sort_values(
+        [
+            TIME_COLUMN,
+            "city_London",
+            "city_Manchester",
+        ],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+    if canonical_data.isnull().any().any():
+        raise ValueError(
+            "Evaluation dataset contains null values before hashing."
+        )
+
+    dataset_hash = hashlib.sha256()
+
+    dataset_hash.update(
+        "|".join(required_columns).encode("utf-8")
+    )
+
+    dataset_hash.update(
+        pd.util.hash_pandas_object(
+            canonical_data,
+            index=False,
+        ).values.tobytes()
+    )
+
+    return f"sha256:{dataset_hash.hexdigest()}"
 
 def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
-    """Compare scikit-learn candidates against registered champion models."""
+    """Compare Scikit-learn candidates against registered champions
+    using the shared chronological Spark-compatible test population.
+    """
 
     if not candidate_run_id:
         raise ValueError("Candidate run ID is required.")
@@ -407,112 +483,226 @@ def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
             f"Feature dataset not found: {DATA_PATH}"
         )
 
-    df = pd.read_parquet(DATA_PATH).dropna().reset_index(drop=True)
+    df = pd.read_parquet(DATA_PATH).dropna().copy()
 
-    if TARGET_COLUMN not in df.columns:
-        raise ValueError(f"Target column {TARGET_COLUMN!r} is missing.")
-
-    feature_names = [
-        column for column in df.columns
-        if column not in {TARGET_COLUMN, TIME_COLUMN}
-    ]
-
-    X = df[feature_names]
-    y = df[TARGET_COLUMN]
-
-    from sklearn.model_selection import train_test_split
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=TEST_SIZE,
-        random_state=RANDOM_STATE,
+    required_columns = (
+        FEATURE_COLUMNS
+        + [
+            TARGET_COLUMN,
+            TIME_COLUMN,
+            "city_London",
+            "city_Manchester",
+        ]
     )
 
+    missing_columns = [
+        column for column in required_columns
+        if column not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing evaluation columns: {missing_columns}"
+        )
+
+    df[TIME_COLUMN] = pd.to_datetime(df[TIME_COLUMN])
+
+    # Reproduce W8 chronological timestamp split.
+    df = df.sort_values(TIME_COLUMN).reset_index(drop=True)
+
+    timestamps = (
+        df[TIME_COLUMN]
+        .drop_duplicates()
+        .sort_values()
+        .reset_index(drop=True)
+    )
+
+    split_index = int(len(timestamps) * (1 - TEST_SIZE))
+
+    if split_index <= 0 or split_index >= len(timestamps):
+        raise ValueError(
+            "Insufficient timestamps for chronological splitting."
+        )
+
+    train_timestamps = timestamps.iloc[:split_index]
+    test_timestamps = timestamps.iloc[split_index:]
+
+    # Reproduce Spark boundary filtering.
+    city_columns = [
+        "city_London",
+        "city_Manchester",
+    ]
+
+    window = df.groupby(city_columns, sort=False)
+
+    df["_row_number"] = window.cumcount() + 1
+    df["_total_rows"] = window[TIME_COLUMN].transform("size")
+
+    df = df[
+        (df["_row_number"] > 3)
+        & (df["_row_number"] <= df["_total_rows"] - 1)
+    ].copy()
+
+    df = df.drop(
+        columns=["_row_number", "_total_rows"]
+    )
+
+    train_df = df[
+        df[TIME_COLUMN].isin(train_timestamps)
+    ].copy()
+
+    test_df = df[
+        df[TIME_COLUMN].isin(test_timestamps)
+    ].copy()
+
+    if train_df[TIME_COLUMN].max() >= test_df[TIME_COLUMN].min():
+        raise ValueError(
+            "Chronological evaluation split validation failed."
+        )
+
+    if train_df.empty:
+        raise ValueError(
+            "Spark-compatible training dataset is empty."
+        )
+
+    if test_df.empty:
+        raise ValueError(
+            "Spark-compatible test dataset is empty."
+        )
+
+    X_test = test_df[FEATURE_COLUMNS].copy()
+    y_test = test_df[TARGET_COLUMN].copy()
+
+    # Load the candidate scaler and preserve its original
+    # feature preprocessing contract.
     scaler = joblib.load(candidate_dir / "scaler.pkl")
-    scaler_columns = list(getattr(scaler, "feature_names_in_", []))
+
+    scaler_columns = list(
+        getattr(scaler, "feature_names_in_", [])
+    )
 
     if not scaler_columns:
-        scaler_columns = X_train.select_dtypes(
+        scaler_columns = X_test.select_dtypes(
             include=np.number
         ).columns.tolist()
 
         if len(scaler_columns) != getattr(
-            scaler, "n_features_in_", len(scaler_columns)
+            scaler,
+            "n_features_in_",
+            len(scaler_columns),
         ):
             raise ValueError(
                 "Cannot safely determine candidate scaler input columns."
             )
 
-    missing_columns = sorted(
-        set(scaler_columns) - set(X_train.columns)
+    missing_scaler_columns = sorted(
+        set(scaler_columns) - set(X_test.columns)
     )
-    if missing_columns:
+
+    if missing_scaler_columns:
         raise ValueError(
-            f"Candidate scaler expects missing columns: {missing_columns}"
+            "Candidate scaler expects missing columns: "
+            f"{missing_scaler_columns}"
         )
 
     X_test_scaled = X_test.copy().astype("float64")
+
     X_test_scaled.loc[:, scaler_columns] = scaler.transform(
         X_test[scaler_columns]
     )
 
+    # Include observation identity in the dataset hash.
     validation_data = pd.concat(
         [
+            test_df[[TIME_COLUMN]].reset_index(drop=True),
             X_test.reset_index(drop=True),
             y_test.rename(TARGET_COLUMN).reset_index(drop=True),
         ],
         axis=1,
     )
 
-    dataset_hash = hashlib.sha256()
-    dataset_hash.update(
-        "|".join(validation_data.columns).encode()
-    )
-    dataset_hash.update(
-        pd.util.hash_pandas_object(
-            validation_data,
-            index=False,
-        ).values.tobytes()
-    )
+    dataset_id = calculate_dataset_id(validation_data)
 
-    dataset_id = f"sha256:{dataset_hash.hexdigest()}"
-    protocol = (
-        f"sklearn_train_test_split_test_size_{TEST_SIZE}"
-        f"_random_state_{RANDOM_STATE}_v1"
-    )
+    protocol = "chronological_80_20_boundary_filtered_v1"
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+
+    client = MlflowClient(
+        tracking_uri=MLFLOW_TRACKING_URI
+    )
 
     candidate_models = {
-        "sklearn_linear_regression": (
-            joblib.load(candidate_dir / "linear_regression_model.pkl")
+        "sklearn_linear_regression": joblib.load(
+            candidate_dir / "linear_regression_model.pkl"
         ),
-        "sklearn_random_forest": (
-            joblib.load(candidate_dir / "random_forest_model.pkl")
+        "sklearn_random_forest": joblib.load(
+            candidate_dir / "random_forest_model.pkl"
         ),
     }
 
     results = {}
 
     for model_key, candidate_estimator in candidate_models.items():
+
         incumbent = load_incumbent_model(
             client=client,
             model_key=model_key,
         )
 
-        candidate_predictions = candidate_estimator.predict(
-            X_test_scaled
-        )
-        incumbent_predictions = incumbent.model.predict(X_test)
+
+        # Candidate estimator expects scaled features.
+        if model_key == "sklearn_linear_regression":
+            candidate_predictions = (
+                np.dot(
+                    X_test_scaled.to_numpy(dtype=np.float64),
+                    candidate_estimator.coef_,
+                )
+                + candidate_estimator.intercept_
+            )
+        else:
+            candidate_predictions = candidate_estimator.predict(
+                X_test_scaled
+            )
+
+        # Registered incumbent pipeline applies its own scaler.
+        if model_key == "sklearn_linear_regression":
+            incumbent_scaler = incumbent.model.named_steps["scaler"]
+            incumbent_estimator = incumbent.model.named_steps["model"]
+
+            incumbent_scaled = incumbent_scaler.transform(X_test)
+
+            incumbent_predictions = (
+                np.dot(
+                    np.asarray(incumbent_scaled, dtype=np.float64),
+                    incumbent_estimator.coef_,
+                )
+                + incumbent_estimator.intercept_
+            )
+        else:
+            incumbent_predictions = incumbent.model.predict(X_test)
+
+        if (
+            not np.isfinite(candidate_predictions).all()
+            or not np.isfinite(incumbent_predictions).all()
+        ):
+            raise ValueError(
+                f"Non-finite predictions generated for {model_key}."
+            )
+
 
         candidate_metrics = {
-            key: evaluate_predictions(y_test, candidate_predictions)[key]
+            key: evaluate_predictions(
+                y_test,
+                candidate_predictions,
+            )[key]
             for key in ("mae", "rmse", "r2")
         }
+
         incumbent_metrics = {
-            key: evaluate_predictions(y_test, incumbent_predictions)[key]
+            key: evaluate_predictions(
+                y_test,
+                incumbent_predictions,
+            )[key]
             for key in ("mae", "rmse", "r2")
         }
 
@@ -532,6 +722,8 @@ def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
             "dataset_id": dataset_id,
             "evaluation_protocol": protocol,
             "test_rows": int(len(y_test)),
+            "test_start": str(test_df[TIME_COLUMN].min()),
+            "test_end": str(test_df[TIME_COLUMN].max()),
             "candidate_metrics": candidate_metrics,
             "incumbent_metrics": incumbent_metrics,
             "comparison": comparison.to_dict(),
@@ -540,13 +732,9 @@ def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
     return results
 
 
+
 def evaluate_spark_models(artifact_dirs: dict[str, Path]) -> list[dict]:
     from pyspark.ml.evaluation import RegressionEvaluator
-    from pyspark.ml.feature import StandardScalerModel
-    from pyspark.ml.regression import (
-        LinearRegressionModel,
-        RandomForestRegressionModel,
-    )
     from pyspark.sql import SparkSession
 
     spark = (
@@ -679,15 +867,7 @@ def evaluate_spark_candidates(candidate_run_id: str) -> dict:
             f"No Parquet data files found in {candidate_test_path}"
         )
 
-    dataset_hash = hashlib.sha256()
-    for parquet_file in parquet_files:
-        dataset_hash.update(parquet_file.name.encode())
-        with parquet_file.open("rb") as file:
-            for chunk in iter(lambda: file.read(1024 * 1024), b""):
-                dataset_hash.update(chunk)
-
-    dataset_id = f"sha256:{dataset_hash.hexdigest()}"
-    protocol = "spark_chronological_split_80_20_v1"
+    protocol = "chronological_80_20_boundary_filtered_v1"
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
@@ -707,6 +887,37 @@ def evaluate_spark_candidates(candidate_run_id: str) -> dict:
     try:
         test_df = spark.read.parquet(str(candidate_test_path))
         test_rows = test_df.count()
+
+        spark_test_pdf = test_df.select(
+            TIME_COLUMN,
+            "features",
+            TARGET_COLUMN,
+        ).toPandas()
+
+        feature_matrix = pd.DataFrame(
+            spark_test_pdf["features"].apply(
+                lambda vector: vector.toArray()
+            ).tolist(),
+            columns=FEATURE_COLUMNS,
+        )
+
+        if feature_matrix.shape[1] != len(FEATURE_COLUMNS):
+            raise ValueError(
+                f"Spark feature dimension mismatch: "
+                f"expected {len(FEATURE_COLUMNS)}, "
+                f"received {feature_matrix.shape[1]}."
+            )
+
+        spark_validation_data = pd.concat(
+            [
+                spark_test_pdf[[TIME_COLUMN]].reset_index(drop=True),
+                feature_matrix.reset_index(drop=True),
+                spark_test_pdf[[TARGET_COLUMN]].reset_index(drop=True),
+            ],
+            axis=1,
+        )
+
+        dataset_id = calculate_dataset_id(spark_validation_data)
 
         if test_rows == 0:
             raise ValueError("Candidate test dataset is empty.")
@@ -788,6 +999,8 @@ def evaluate_spark_candidates(candidate_run_id: str) -> dict:
                 "dataset_id": dataset_id,
                 "evaluation_protocol": protocol,
                 "test_rows": test_rows,
+                "test_start": str(spark_test_pdf[TIME_COLUMN].min()),
+                "test_end": str(spark_test_pdf[TIME_COLUMN].max()),
                 "candidate_metrics": candidate_metrics,
                 "incumbent_metrics": incumbent_metrics,
                 "comparison": comparison.to_dict(),
@@ -958,17 +1171,19 @@ def log_candidate_evaluations(results: dict[str, dict]) -> list[str]:
             filter_string=(
                 "tags.evaluation_type = 'candidate_evaluation' "
                 f"and tags.candidate_run_id = '{result['candidate_run_id']}' "
-                f"and tags.model_key = '{model_key}'"
+                f"and tags.model_key = '{model_key}' "
+                f"and tags.validation_dataset_id = '{result['dataset_id']}' "
+                f"and tags.evaluation_protocol = '{result['evaluation_protocol']}'"
             ),
             order_by=["start_time DESC"],
             max_results=1,
         )
 
         if existing_runs:
-            existing_run_id = existing_runs[0].info.run_id
-            run_ids.append(existing_run_id)
-            print(f"Reusing existing evaluation run: {model_key} ({existing_run_id})")
-            continue
+            print(
+                f"Existing evaluation found for {model_key}. "
+                "Creating a fresh evaluation run for corrected metrics."
+            )
 
         comparison = result["comparison"]
         candidate_metrics = result["candidate_metrics"]
@@ -1054,32 +1269,144 @@ def log_candidate_evaluations(results: dict[str, dict]) -> list[str]:
 
     return run_ids
 
+class SparkFeatureModel(mlflow.pyfunc.PythonModel):
+    """Expose Spark MLlib models through the canonical Pandas feature contract."""
+
+    def __init__(self, model_key: str, feature_columns: list[str]):
+        self.model_key = model_key
+        self.feature_columns = feature_columns
+
+    def load_context(self, context):
+        from pyspark.ml.feature import StandardScalerModel, VectorAssembler
+        from pyspark.ml.regression import (
+            LinearRegressionModel,
+            RandomForestRegressionModel,
+        )
+        from pyspark.sql import SparkSession
+
+        self.spark = (
+            SparkSession.builder
+            .appName("Weather-MLflow-Inference")
+            .master(os.getenv("SPARK_MASTER", "local[*]"))
+            .config(
+                "spark.driver.memory",
+                os.getenv("SPARK_DRIVER_MEMORY", "4g"),
+            )
+            .getOrCreate()
+        )
+
+        self.spark.sparkContext.setLogLevel("ERROR")
+
+        self.assembler = VectorAssembler(
+            inputCols=self.feature_columns,
+            outputCol="features",
+            handleInvalid="error",
+        )
+
+        if self.model_key == "spark_linear_regression":
+            self.scaler = StandardScalerModel.load(
+                context.artifacts["spark_scaler"]
+            )
+            self.model = LinearRegressionModel.load(
+                context.artifacts["spark_model"]
+            )
+        elif self.model_key == "spark_random_forest":
+            self.model = RandomForestRegressionModel.load(
+                context.artifacts["spark_model"]
+            )
+        else:
+            raise ValueError(
+                f"Unsupported Spark model: {self.model_key}"
+            )
+
+    def predict(
+        self,
+        context: Any,
+        model_input: pd.DataFrame,
+        params: dict[str, Any] | None = None,
+    ) -> np.ndarray:
+        missing = [
+            column for column in self.feature_columns
+            if column not in model_input.columns
+        ]
+        extra = [
+            column for column in model_input.columns
+            if column not in self.feature_columns
+        ]
+
+        if missing or extra:
+            raise ValueError(
+                f"Invalid feature columns. Missing={missing}, extra={extra}"
+            )
+
+        input_df = model_input[self.feature_columns].copy()
+
+        for column in self.feature_columns:
+            input_df[column] = pd.to_numeric(
+                input_df[column],
+                errors="raise",
+            ).astype("float64")
+
+        if not np.isfinite(input_df.to_numpy()).all():
+            raise ValueError(
+                "Model input contains non-finite feature values."
+            )
+
+        spark_df = self.spark.createDataFrame(input_df)
+        assembled_df = self.assembler.transform(spark_df)
+
+        if self.model_key == "spark_linear_regression":
+            assembled_df = (
+                self.scaler.transform(assembled_df)
+                .drop("features")
+                .withColumnRenamed("scaled_features", "features")
+            )
+
+        predictions = self.model.transform(assembled_df)
+
+        return (
+            predictions
+            .select("prediction")
+            .toPandas()["prediction"]
+            .to_numpy(dtype=np.float64)
+        )
+
 
 def log_candidate_model_artifacts(
     results: dict[str, dict],
     evaluation_run_ids: list[str],
 ) -> dict[str, str]:
-    """Log accepted candidate models into their evaluation runs."""
+    """Log and validate accepted candidate models with a shared feature signature."""
 
     from sklearn.pipeline import Pipeline
+    from mlflow.models import infer_signature
 
-    from pyspark.ml import PipelineModel
     from pyspark.ml.feature import StandardScalerModel
     from pyspark.ml.regression import (
         LinearRegressionModel,
         RandomForestRegressionModel,
     )
-    from pyspark.sql import SparkSession
 
     if len(results) != 4 or len(evaluation_run_ids) != 4:
         raise ValueError(
             "Expected four candidate results and four evaluation run IDs."
         )
 
+    sample_df = (
+        pd.read_parquet(DATA_PATH)[FEATURE_COLUMNS]
+        .dropna()
+        .head(5)
+        .astype("float64")
+    )
+
+    if len(sample_df) < 2:
+        raise ValueError("Insufficient feature rows for model validation.")
+
     model_uris = {}
 
     for (model_key, result), evaluation_run_id in zip(
-        results.items(), evaluation_run_ids
+        results.items(),
+        evaluation_run_ids,
     ):
         if not result["comparison"]["accepted"]:
             print(f"Skipping rejected candidate: {model_key}")
@@ -1099,21 +1426,61 @@ def log_candidate_model_artifacts(
         )
 
         with mlflow.start_run(run_id=evaluation_run_id):
-
             existing_run = mlflow.get_run(evaluation_run_id)
-            existing_tags = existing_run.data.tags
+            existing_uri = existing_run.data.tags.get(
+                "candidate_model_uri"
+            )
 
-            if existing_tags.get("candidate_model_logged") == "true":
-                existing_uri = existing_tags.get("candidate_model_uri")
-
-                if not existing_uri:
-                    raise RuntimeError(
-                        f"Model artifact tag exists but URI is missing: {model_key}"
+            if existing_uri:
+                try:
+                    existing_info = mlflow.models.get_model_info(
+                        existing_uri
                     )
 
-                model_uris[model_key] = existing_uri
-                print(f"Reusing existing model artifact: {model_key}")
-                continue
+                    if existing_info.signature is None:
+                        raise ValueError(
+                            "Existing model has no signature."
+                        )
+
+                    input_names = [
+                        field.name
+                        for field in existing_info.signature.inputs
+                    ]
+
+                    if input_names != FEATURE_COLUMNS:
+                        raise ValueError(
+                            "Existing model schema does not match "
+                            "the canonical feature contract."
+                        )
+
+                    existing_model = mlflow.pyfunc.load_model(existing_uri)
+                    existing_predictions = np.asarray(
+                        existing_model.predict(sample_df),
+                        dtype=float,
+                    ).reshape(-1)
+
+                    if (
+                        len(existing_predictions) != len(sample_df)
+                        or not np.isfinite(existing_predictions).all()
+                    ):
+                        raise ValueError(
+                            "Existing model failed inference validation."
+                        )
+
+                    model_uris[model_key] = existing_uri
+                    mlflow.set_tags({
+                        "candidate_model_signature_validated": "true",
+                        "candidate_model_inference_validated": "true",
+                    })
+
+                    print(f"Reusing validated signed model: {model_key}")
+                    continue
+
+                except Exception as exc:
+                    print(
+                        f"Existing artifact is not reusable for {model_key}: "
+                        f"{exc}"
+                    )
 
             if model_key.startswith("sklearn_"):
                 scaler = joblib.load(candidate_dir / "scaler.pkl")
@@ -1128,10 +1495,17 @@ def log_candidate_model_artifacts(
                     candidate_dir / estimator_filename
                 )
 
-                candidate_pipeline = Pipeline([
+                candidate_model = Pipeline([
                     ("scaler", scaler),
                     ("model", estimator),
                 ])
+
+                predictions = np.asarray(
+                    candidate_model.predict(sample_df),
+                    dtype=float,
+                ).reshape(-1)
+
+                signature = infer_signature(sample_df, predictions)
 
                 model_log_kwargs = {}
 
@@ -1141,8 +1515,10 @@ def log_candidate_model_artifacts(
                     ]
 
                 model_info = mlflow.sklearn.log_model(
-                    sk_model=candidate_pipeline,
-                    name="candidate_model",
+                    sk_model=candidate_model,
+                    name="candidate_model_signed",
+                    signature=signature,
+                    input_example=sample_df,
                     **model_log_kwargs,
                 )
 
@@ -1150,60 +1526,98 @@ def log_candidate_model_artifacts(
                 "spark_linear_regression",
                 "spark_random_forest",
             ):
-                spark = (
-                    SparkSession.builder
-                    .appName("P2-W8-Candidate-Model-Logging")
-                    .master(os.getenv("SPARK_MASTER", "local[*]"))
-                    .config(
-                        "spark.driver.memory",
-                        os.getenv("SPARK_DRIVER_MEMORY", "4g"),
+                artifact_paths = {}
+
+                if model_key == "spark_linear_regression":
+                    scaler_path = (
+                        candidate_dir / "mllib_linear_regression_scaler"
                     )
-                    .getOrCreate()
+                    model_path = (
+                        candidate_dir / "mllib_linear_regression"
+                    )
+
+                    artifact_paths["spark_scaler"] = str(scaler_path)
+
+                else:
+                    model_path = candidate_dir / "mllib_random_forest"
+
+                artifact_paths["spark_model"] = str(model_path)
+
+                # Use a temporary adapter to generate real predictions
+                # for the signature. Do not serialize its Spark session.
+                signature_adapter = SparkFeatureModel(
+                    model_key=model_key,
+                    feature_columns=FEATURE_COLUMNS,
                 )
 
-                spark.sparkContext.setLogLevel("ERROR")
+                signature_adapter.load_context(
+                    SimpleNamespace(artifacts=artifact_paths)
+                )
 
                 try:
-                    if model_key == "spark_linear_regression":
-                        scaler_model = StandardScalerModel.load(
-                            str(
-                                candidate_dir
-                                / "mllib_linear_regression_scaler"
-                            )
-                        )
-
-                        candidate_model = LinearRegressionModel.load(
-                            str(
-                                candidate_dir
-                                / "mllib_linear_regression"
-                            )
-                        )
-
-                        candidate_model.setFeaturesCol("scaled_features")
-
-                        candidate_pipeline = PipelineModel(
-                            stages=[
-                                scaler_model,
-                                candidate_model,
-                            ]
-                        )
-
-                    else:
-                        candidate_pipeline = RandomForestRegressionModel.load(
-                            str(candidate_dir / "mllib_random_forest")
-                        )
-
-                    model_info = mlflow.spark.log_model(
-                        spark_model=candidate_pipeline,
-                        artifact_path="candidate_model",
+                    predictions = signature_adapter.predict(
+                        context=None,
+                        model_input=sample_df,
                     )
-
                 finally:
-                    spark.stop()
+                    signature_adapter.spark.stop()
+
+                signature = infer_signature(sample_df, predictions)
+
+                # Log a fresh adapter. MLflow will call load_context
+                # when the model is loaded for inference.
+                model_info = mlflow.pyfunc.log_model(
+                    name="candidate_model_signed",
+                    python_model=SparkFeatureModel(
+                        model_key=model_key,
+                        feature_columns=FEATURE_COLUMNS,
+                    ),
+                    artifacts=artifact_paths,
+                    signature=signature,
+                    input_example=sample_df,
+                )
 
             else:
                 raise ValueError(
                     f"Unsupported candidate model: {model_key}"
+                )
+
+            loaded_model = mlflow.pyfunc.load_model(
+                model_info.model_uri
+            )
+
+            predictions = np.asarray(
+                loaded_model.predict(sample_df),
+                dtype=float,
+            ).reshape(-1)
+
+            if len(predictions) != len(sample_df):
+                raise RuntimeError(
+                    f"Invalid prediction count for {model_key}."
+                )
+
+            if not np.isfinite(predictions).all():
+                raise RuntimeError(
+                    f"Non-finite predictions for {model_key}."
+                )
+
+            model_info_check = mlflow.models.get_model_info(
+                model_info.model_uri
+            )
+
+            if model_info_check.signature is None:
+                raise RuntimeError(
+                    f"Model signature missing after logging: {model_key}"
+                )
+
+            input_names = [
+                field.name
+                for field in model_info_check.signature.inputs
+            ]
+
+            if input_names != FEATURE_COLUMNS:
+                raise RuntimeError(
+                    f"Logged model feature schema mismatch for {model_key}."
                 )
 
             model_uris[model_key] = model_info.model_uri
@@ -1211,10 +1625,13 @@ def log_candidate_model_artifacts(
             mlflow.set_tags({
                 "candidate_model_logged": "true",
                 "candidate_model_uri": model_info.model_uri,
+                "candidate_model_signature_validated": "true",
+                "candidate_model_inference_validated": "true",
             })
 
             print(
-                f"Logged {model_key}: {model_info.model_uri}"
+                f"Logged and validated {model_key}: "
+                f"{model_info.model_uri}"
             )
 
     expected_accepted = sum(
@@ -1314,6 +1731,167 @@ def register_accepted_candidates(
     return registered_versions
 
 
+
+def promote_global_champion_if_better(
+    *,
+    evaluation_run_ids: list[str],
+    registered_versions: dict[str, dict],
+) -> dict[str, Any]:
+    """Select, compare, validate and promote a current-batch champion."""
+
+    if len(evaluation_run_ids) != 4:
+        raise ValueError(
+            f"Expected four evaluation run IDs, received {len(evaluation_run_ids)}."
+        )
+
+    if not registered_versions:
+        raise RuntimeError("No family-level candidates were registered.")
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+
+    evaluation_runs = [
+        client.get_run(run_id)
+        for run_id in evaluation_run_ids
+    ]
+
+    dataset_ids = {
+        run.data.tags.get("validation_dataset_id")
+        for run in evaluation_runs
+    }
+    protocols = {
+        run.data.tags.get("evaluation_protocol")
+        for run in evaluation_runs
+    }
+
+    if len(dataset_ids) != 1 or None in dataset_ids:
+        raise RuntimeError(
+            f"Current evaluation runs have inconsistent dataset IDs: {dataset_ids}"
+        )
+
+    if len(protocols) != 1 or None in protocols:
+        raise RuntimeError(
+            f"Current evaluation runs have inconsistent protocols: {protocols}"
+        )
+
+    validation_dataset_id = next(iter(dataset_ids))
+    evaluation_protocol = next(iter(protocols))
+
+    print("\nSelecting the best current-batch candidate...")
+
+    selected = select_global_champion(
+        client=client,
+        validation_dataset_id=validation_dataset_id,
+        evaluation_protocol=evaluation_protocol,
+        evaluation_run_ids=set(evaluation_run_ids),
+    )
+
+    registered_keys = {
+        (
+            details["registered_model_name"],
+            str(details["version"]),
+        )
+        for details in registered_versions.values()
+    }
+
+    selected_key = (
+        selected["registered_model_name"],
+        str(selected["version"]),
+    )
+
+    if selected_key not in registered_keys:
+        raise RuntimeError(
+            "Selected candidate does not match a family version "
+            "registered during this execution."
+        )
+
+    print(
+        f"Selected: {selected['registered_model_name']} "
+        f"version {selected['version']}"
+    )
+
+    comparison = compare_global_candidate_to_champion(
+        client=client,
+        selected_candidate=selected,
+    )
+
+    print(f"Global comparison: {comparison.to_dict()}")
+
+    if not comparison.accepted:
+        print(
+            "Global promotion rejected. "
+            "The existing champion alias remains unchanged."
+        )
+        return {
+            "status": "NOT_PROMOTED",
+            "reason": "Candidate did not outperform the current champion.",
+            "comparison": comparison.to_dict(),
+        }
+
+    print("\nRegistering global production candidate...")
+
+    global_version = register_global_champion(
+        client=client,
+        selected_candidate=selected,
+    )
+
+    version_id = str(global_version.version)
+
+    global_version = client.get_model_version(
+        name=GLOBAL_PRODUCTION_MODEL,
+        version=version_id,
+    )
+
+    if global_version.status != "READY":
+        raise RuntimeError(
+            f"Global version {version_id} is not READY. "
+            "Champion alias was not changed."
+        )
+
+    feature_sample = (
+        pd.read_parquet(DATA_PATH)[FEATURE_COLUMNS]
+        .dropna()
+        .head(5)
+        .astype("float64")
+    )
+
+    if len(feature_sample) < 2:
+        raise RuntimeError("Insufficient feature rows for inference validation.")
+
+    if not np.isfinite(feature_sample.to_numpy()).all():
+        raise RuntimeError("Feature sample contains non-finite values.")
+
+    print("\nValidating global model signature and inference...")
+
+    validation = validate_global_model_version(
+        client=client,
+        version=version_id,
+        feature_sample=feature_sample,
+        expected_feature_columns=FEATURE_COLUMNS,
+    )
+
+    print(f"Validation: {validation}")
+
+    print("\nPromoting validated global model...")
+
+    promoted = promote_global_champion(
+        client=client,
+        version=version_id,
+    )
+
+    print(
+        f"Verified alias: {GLOBAL_PRODUCTION_MODEL}@"
+        f"{GLOBAL_CHAMPION_ALIAS} -> version {promoted.version}"
+    )
+
+    return {
+        "status": "PROMOTED",
+        "version": version_id,
+        "comparison": comparison.to_dict(),
+        "validation": validation,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Evaluate existing sklearn and Spark MLlib models without retraining."
@@ -1363,6 +1941,7 @@ def main() -> None:
             spark_candidate_run_id=args.spark_candidate_run_id,
         )
 
+
         print("Evaluating candidate scikit-learn models...")
         candidate_results = evaluate_sklearn_candidates(
             args.sklearn_candidate_run_id
@@ -1372,6 +1951,64 @@ def main() -> None:
         candidate_results.update(
             evaluate_spark_candidates(args.spark_candidate_run_id)
         )
+
+        # Validate cross-framework evaluation consistency.
+        dataset_ids = {
+            result["dataset_id"]
+            for result in candidate_results.values()
+        }
+
+        protocols = {
+            result["evaluation_protocol"]
+            for result in candidate_results.values()
+        }
+
+        test_row_counts = {
+            result["test_rows"]
+            for result in candidate_results.values()
+        }
+
+        test_periods = {
+            (
+                result["test_start"],
+                result["test_end"],
+            )
+            for result in candidate_results.values()
+        }
+
+        if len(candidate_results) != 4:
+            raise RuntimeError(
+                f"Expected 4 candidate evaluations, "
+                f"received {len(candidate_results)}."
+            )
+
+        if len(dataset_ids) != 1:
+            raise RuntimeError(
+                f"Candidate dataset IDs do not match: {dataset_ids}"
+            )
+
+        if len(protocols) != 1:
+            raise RuntimeError(
+                f"Candidate evaluation protocols do not match: {protocols}"
+            )
+
+        if len(test_row_counts) != 1:
+            raise RuntimeError(
+                f"Candidate test row counts do not match: "
+                f"{test_row_counts}"
+            )
+
+        if len(test_periods) != 1:
+            raise RuntimeError(
+                f"Candidate test periods do not match: {test_periods}"
+            )
+
+        print("Cross-framework validation passed.")
+        print(f"Dataset ID: {next(iter(dataset_ids))}")
+        print(f"Protocol: {next(iter(protocols))}")
+        print(f"Test rows: {next(iter(test_row_counts))}")
+        test_start, test_end = next(iter(test_periods))
+        print(f"Test period: {test_start} to {test_end}")
 
         evaluation_run_ids = log_candidate_evaluations(candidate_results)
 
@@ -1385,6 +2022,14 @@ def main() -> None:
             evaluation_run_ids,
             candidate_model_uris,
         )
+
+        global_promotion_result = promote_global_champion_if_better(
+            evaluation_run_ids=evaluation_run_ids,
+            registered_versions=registered_versions,
+        )
+
+        print("\nGlobal production promotion result:")
+        print(global_promotion_result["status"])
 
         print("\nRegistered candidate model versions:")
         for model_key, details in registered_versions.items():

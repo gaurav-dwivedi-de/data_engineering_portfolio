@@ -1,3 +1,5 @@
+
+import numpy as np
 import pandas as pd
 
 from .config import (
@@ -7,60 +9,77 @@ from .config import (
 )
 
 
-def predict(model, scaler, features_df):
+def predict(model, features_df, feature_columns):
     """
-    Generate weather predictions using the trained model.
+    Generate predictions using the MLflow production model.
 
-    Parameters
-    ----------
-    model : BaseEstimator
-        Trained Scikit-learn model.
-
-    scaler : StandardScaler
-        Trained scaler from Week 8.
-
-    features_df : pandas.DataFrame
-        Engineered feature dataset.
-
-    Returns
-    -------
-    pandas.DataFrame
-        Original dataset with predictions.
+    The canonical feature configuration defines input names and order.
+    Preprocessing is handled inside the registered MLflow model.
     """
 
-    # Create a copy of the dataset
     prediction_df = features_df.copy()
 
-    # Prepare feature matrix
-    X = prediction_df.drop(
-        columns=[
-            TIME_COLUMN,
-            TARGET_COLUMN,
-        ]
-    )
+    excluded_columns = {
+        TIME_COLUMN,
+        TARGET_COLUMN,
+    }
 
-    # Convert features to float64
-    X = X.astype("float64")
+    available_features = [
+        column
+        for column in prediction_df.columns
+        if column not in excluded_columns
+    ]
 
-    # Apply scaler
-    X_scaled = scaler.transform(X)
+    missing_columns = [
+        column
+        for column in feature_columns
+        if column not in available_features
+    ]
 
-    # Preserve feature names after scaling
-    X_scaled = pd.DataFrame(
-        X_scaled,
-        columns=X.columns,
-        index=X.index,
-    )
+    unexpected_columns = [
+        column
+        for column in available_features
+        if column not in feature_columns
+    ]
 
-    # Generate predictions
-    predictions = model.predict(X_scaled)
+    if missing_columns or unexpected_columns:
+        raise ValueError(
+            "Feature schema mismatch. "
+            f"Missing={missing_columns}, "
+            f"unexpected={unexpected_columns}"
+        )
 
-    # Add predictions to dataframe
+    model_input = prediction_df[feature_columns].copy()
+
+    for column in feature_columns:
+        model_input[column] = pd.to_numeric(
+            model_input[column],
+            errors="raise",
+        ).astype("float64")
+
+    if not np.isfinite(model_input.to_numpy()).all():
+        raise ValueError(
+            "Model input contains non-finite feature values."
+        )
+
+    predictions = np.asarray(
+        model.predict(model_input),
+        dtype=np.float64,
+    ).reshape(-1)
+
+    if len(predictions) != len(prediction_df):
+        raise RuntimeError(
+            "Prediction count does not match input row count."
+        )
+
+    if not np.isfinite(predictions).all():
+        raise RuntimeError(
+            "Model returned non-finite predictions."
+        )
+
     prediction_df[PREDICTION_COLUMN] = predictions
 
-    # Display summary
     print("\nPredictions generated successfully.")
-    print(f"Rows processed: {len(prediction_df)}")
-    print(f"Prediction column: {PREDICTION_COLUMN}")
+    print(f"Rows predicted: {len(predictions)}")
 
     return prediction_df

@@ -98,6 +98,15 @@ spec:
             - name: PYTHONUNBUFFERED
               value: "1"
 
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow-tracking-service:5000"
+
+            - name: MLFLOW_MODEL_NAME
+              value: "weather-production-model"
+
+            - name: MLFLOW_MODEL_ALIAS
+              value: "champion"
+
             - name: FASTAPI_URL
               value: "http://fastapi-service:8000"
 

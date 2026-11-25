@@ -104,7 +104,7 @@ spec:
               value: "http://mlflow-tracking-service:5000"
 
             - name: MLFLOW_MODEL_NAME
-              value: "weather-intelligence-sklearn-linear-regression"
+              value: "weather-production-model"
 
             - name: MLFLOW_MODEL_ALIAS
               value: "champion"

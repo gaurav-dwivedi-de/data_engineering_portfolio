@@ -3,6 +3,8 @@ from unittest.mock import MagicMock
 
 from registration import (
     ComparisonResult,
+    compare_global_candidate_to_champion,
+    get_eligible_production_candidates,
     get_latest_registered_version,
     get_champion_version,
     promote_candidate,
@@ -190,6 +192,270 @@ class TestCandidatePromotion(unittest.TestCase):
             )
 
         self.client.set_registered_model_alias.assert_called_once()
+
+if __name__ == "__main__":
+    unittest.main()
+
+class TestGlobalChampionSelection(unittest.TestCase):
+
+    MODEL_NAME = "weather-intelligence-sklearn-linear-regression"
+    DATASET_ID = "weather-validation-v1"
+    PROTOCOL = "chronological_80_20_boundary_filtered_v1"
+
+    def make_incumbent(self, **overrides):
+        tags = {
+            "registration_type": "global_production",
+            "validation_dataset_id": self.DATASET_ID,
+            "evaluation_protocol": self.PROTOCOL,
+            "selected_mae": "0.3717",
+            "selected_rmse": "0.5084",
+            "selected_r2": "0.9928",
+        }
+        tags.update(overrides)
+
+        incumbent = MagicMock()
+        incumbent.status = "READY"
+        incumbent.version = "1"
+        incumbent.tags = tags
+        return incumbent
+
+    def make_candidate(self, **overrides):
+        candidate = {
+            "model_key": "sklearn_linear_regression",
+            "registered_model_name": self.MODEL_NAME,
+            "version": "15",
+            "run_id": "current-run",
+            "validation_dataset_id": self.DATASET_ID,
+            "evaluation_protocol": self.PROTOCOL,
+            "metrics": {
+                "mae": 0.3600,
+                "rmse": 0.5000,
+                "r2": 0.9930,
+            },
+        }
+        candidate.update(overrides)
+        return candidate
+
+    def test_global_comparison_accepts_improved_candidate(self):
+        client = MagicMock()
+        client.get_model_version_by_alias.return_value = (
+            self.make_incumbent()
+        )
+
+        result = compare_global_candidate_to_champion(
+            client=client,
+            selected_candidate=self.make_candidate(),
+        )
+
+        self.assertTrue(result.accepted)
+        client.set_registered_model_alias.assert_not_called()
+
+    def test_global_comparison_rejects_dataset_mismatch(self):
+        client = MagicMock()
+        client.get_model_version_by_alias.return_value = (
+            self.make_incumbent()
+        )
+
+        candidate = self.make_candidate(
+            validation_dataset_id="different-dataset"
+        )
+
+        result = compare_global_candidate_to_champion(
+            client=client,
+            selected_candidate=candidate,
+        )
+
+        self.assertFalse(result.accepted)
+        self.assertTrue(
+            any("dataset" in reason.lower() for reason in result.reasons)
+        )
+        client.set_registered_model_alias.assert_not_called()
+
+    def test_global_comparison_rejects_protocol_mismatch(self):
+        client = MagicMock()
+        client.get_model_version_by_alias.return_value = (
+            self.make_incumbent()
+        )
+
+        candidate = self.make_candidate(
+            evaluation_protocol="different-protocol"
+        )
+
+        result = compare_global_candidate_to_champion(
+            client=client,
+            selected_candidate=candidate,
+        )
+
+        self.assertFalse(result.accepted)
+        self.assertTrue(
+            any("protocol" in reason.lower() for reason in result.reasons)
+        )
+        client.set_registered_model_alias.assert_not_called()
+
+    def test_global_comparison_rejects_candidate_below_mae_threshold(self):
+        client = MagicMock()
+        client.get_model_version_by_alias.return_value = (
+            self.make_incumbent()
+        )
+
+        candidate = self.make_candidate(
+            metrics={
+                "mae": 0.3700,
+                "rmse": 0.5080,
+                "r2": 0.9930,
+            }
+        )
+
+        result = compare_global_candidate_to_champion(
+            client=client,
+            selected_candidate=candidate,
+        )
+
+        self.assertFalse(result.accepted)
+        client.set_registered_model_alias.assert_not_called()
+
+    def test_global_comparison_rejects_non_ready_incumbent(self):
+        client = MagicMock()
+        incumbent = self.make_incumbent()
+        incumbent.status = "PENDING"
+        client.get_model_version_by_alias.return_value = incumbent
+
+        with self.assertRaises(RuntimeError):
+            compare_global_candidate_to_champion(
+                client=client,
+                selected_candidate=self.make_candidate(),
+            )
+
+        client.set_registered_model_alias.assert_not_called()
+
+    def test_global_comparison_rejects_missing_incumbent_alias(self):
+        client = MagicMock()
+        client.get_model_version_by_alias.side_effect = Exception(
+            "Alias not found"
+        )
+
+        with self.assertRaises(RuntimeError):
+            compare_global_candidate_to_champion(
+                client=client,
+                selected_candidate=self.make_candidate(),
+            )
+
+        client.set_registered_model_alias.assert_not_called()
+
+    def test_global_comparison_rejects_incumbent_missing_metadata(self):
+        client = MagicMock()
+        client.get_model_version_by_alias.return_value = (
+            self.make_incumbent(selected_mae="")
+        )
+
+        with self.assertRaises(RuntimeError):
+            compare_global_candidate_to_champion(
+                client=client,
+                selected_candidate=self.make_candidate(),
+            )
+
+        client.set_registered_model_alias.assert_not_called()
+
+    def test_candidate_filter_excludes_previous_evaluation_runs(self):
+        client = MagicMock()
+
+        version = MagicMock()
+        version.status = "READY"
+        version.version = "15"
+        version.run_id = "current-run"
+        version.source = "models:/candidate-model"
+
+        version.tags = {
+            "validation_dataset_id": self.DATASET_ID,
+            "evaluation_protocol": self.PROTOCOL,
+            "source_evaluation_run_id": "current-run",
+        }
+
+        run = MagicMock()
+        run.info.status = "FINISHED"
+        run.data.tags = {
+            "evaluation_type": "candidate_evaluation",
+            "registration_eligible": "true",
+            "model_key": "sklearn_linear_regression",
+            "registered_model_name": self.MODEL_NAME,
+            "validation_dataset_id": self.DATASET_ID,
+            "evaluation_protocol": self.PROTOCOL,
+        }
+        run.data.metrics = {
+            "candidate_mae": 0.3600,
+            "candidate_rmse": 0.5000,
+            "candidate_r2": 0.9930,
+        }
+
+        client.search_model_versions.side_effect = (
+            lambda filter_string: (
+                [version]
+                if self.MODEL_NAME in filter_string
+                else []
+            )
+        )
+        client.get_run.return_value = run
+
+        candidates = get_eligible_production_candidates(
+            client=client,
+            validation_dataset_id=self.DATASET_ID,
+            evaluation_protocol=self.PROTOCOL,
+            evaluation_run_ids={"different-run"},
+        )
+
+        self.assertEqual(candidates, [])
+        client.get_run.assert_not_called()
+
+    def test_candidate_filter_includes_current_evaluation_run(self):
+        client = MagicMock()
+
+        version = MagicMock()
+        version.status = "READY"
+        version.version = "15"
+        version.run_id = "current-run"
+        version.source = "models:/candidate-model"
+        version.tags = {
+            "validation_dataset_id": self.DATASET_ID,
+            "evaluation_protocol": self.PROTOCOL,
+            "source_evaluation_run_id": "current-run",
+        }
+
+        run = MagicMock()
+        run.info.status = "FINISHED"
+        run.data.tags = {
+            "evaluation_type": "candidate_evaluation",
+            "registration_eligible": "true",
+            "model_key": "sklearn_linear_regression",
+            "registered_model_name": self.MODEL_NAME,
+            "validation_dataset_id": self.DATASET_ID,
+            "evaluation_protocol": self.PROTOCOL,
+        }
+        run.data.metrics = {
+            "candidate_mae": 0.3600,
+            "candidate_rmse": 0.5000,
+            "candidate_r2": 0.9930,
+        }
+
+        client.search_model_versions.side_effect = (
+            lambda filter_string: (
+                [version]
+                if self.MODEL_NAME in filter_string
+                else []
+            )
+        )
+        client.get_run.return_value = run
+
+        candidates = get_eligible_production_candidates(
+            client=client,
+            validation_dataset_id=self.DATASET_ID,
+            evaluation_protocol=self.PROTOCOL,
+            evaluation_run_ids={"current-run"},
+        )
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["run_id"], "current-run")
+        self.assertEqual(candidates[0]["version"], "15")
+
 
 if __name__ == "__main__":
     unittest.main()

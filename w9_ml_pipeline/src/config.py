@@ -1,6 +1,31 @@
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+
+
+# =====================================================
+# Load Local Environment Variables
+# =====================================================
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+load_dotenv(
+    REPOSITORY_ROOT / ".env",
+)
+
+from dotenv import load_dotenv
+
+
+# =====================================================
+# Load Local Environment Variables
+# =====================================================
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+load_dotenv(
+    REPOSITORY_ROOT / ".env",
+)
 
 # =====================================================
 # Project Root
@@ -47,6 +72,18 @@ FEATURE_DATA_PATH = Path(
         "W7_FEATURE_DATA_PATH",
         str(DEFAULT_FEATURE_DATA_PATH),
     )
+)
+
+
+# =====================================================
+# MLflow Production Model
+# =====================================================
+
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI")
+
+MODEL_URI = os.getenv(
+    "W9_MODEL_URI",
+    "models:/weather-production-model@champion",
 )
 
 

@@ -6,6 +6,8 @@ be unit-tested without contacting the tracking server or changing the registry.
 
 from __future__ import annotations
 import mlflow
+import numpy as np
+from mlflow.exceptions import MlflowException
 import math
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping
@@ -330,5 +332,454 @@ def promote_candidate(
         raise RuntimeError(
             "Champion alias verification failed after promotion"
         )
+
+    return promoted
+
+# GLOBAL PRODUCTION MODEL SELECTION
+
+GLOBAL_PRODUCTION_MODEL = "weather-production-model"
+GLOBAL_CHAMPION_ALIAS = "champion"
+GLOBAL_SELECTION_POLICY = "lowest_mae_then_lowest_rmse_then_highest_r2"
+
+
+def get_eligible_production_candidates(
+    *,
+    client: Any,
+    validation_dataset_id: str,
+    evaluation_protocol: str,
+    evaluation_run_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return READY registered versions evaluated on the specified dataset
+    and protocol, where the source evaluation run was eligible for registration.
+    """
+    if not validation_dataset_id or not evaluation_protocol:
+        raise ValueError(
+            "Validation dataset ID and evaluation protocol are required."
+        )
+
+    eligible: list[dict[str, Any]] = []
+
+    for model_key, model_name in MODEL_REGISTRY.items():
+        versions = client.search_model_versions(f"name='{model_name}'")
+
+        for version in versions:
+            version_tags = version.tags or {}
+
+            if version.status != "READY":
+                continue
+
+            if (
+                version_tags.get("validation_dataset_id")
+                != validation_dataset_id
+            ):
+                continue
+
+            if (
+                version_tags.get("evaluation_protocol")
+                != evaluation_protocol
+            ):
+                continue
+
+            evaluation_run_id = version_tags.get(
+                "source_evaluation_run_id"
+            )
+            if not evaluation_run_id:
+                continue
+
+            if (
+                evaluation_run_ids is not None
+                and evaluation_run_id not in evaluation_run_ids
+            ):
+                continue
+
+            run = client.get_run(evaluation_run_id)
+            run_tags = run.data.tags or {}
+
+            if run.info.status != "FINISHED":
+                continue
+
+            if run_tags.get("evaluation_type") != "candidate_evaluation":
+                continue
+
+            if run_tags.get("registration_eligible", "").lower() != "true":
+                continue
+
+            if run_tags.get("model_key") != model_key:
+                continue
+
+            if run_tags.get("registered_model_name") != model_name:
+                continue
+
+            if run_tags.get("validation_dataset_id") != validation_dataset_id:
+                continue
+
+            if run_tags.get("evaluation_protocol") != evaluation_protocol:
+                continue
+
+            if str(version.run_id) != str(evaluation_run_id):
+                continue
+
+            run_metrics = run.data.metrics or {}
+            metric_values = {
+                "mae": run_metrics.get("candidate_mae"),
+                "rmse": run_metrics.get("candidate_rmse"),
+                "r2": run_metrics.get("candidate_r2"),
+            }
+
+            if any(value is None for value in metric_values.values()):
+                continue
+
+            try:
+                metrics = _normalise_metrics(
+                    metric_values,
+                    f"{model_key} version {version.version}",
+                )
+            except ValueError:
+                continue
+
+            eligible.append({
+                "model_key": model_key,
+                "registered_model_name": model_name,
+                "version": str(version.version),
+                "run_id": evaluation_run_id,
+                "validation_dataset_id": validation_dataset_id,
+                "evaluation_protocol": evaluation_protocol,
+                "metrics": metrics,
+                "source": version.source,
+            })
+
+    return eligible
+
+
+def select_global_champion(
+    *,
+    client: Any,
+    validation_dataset_id: str,
+    evaluation_protocol: str,
+    evaluation_run_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    """Select the best eligible candidate without changing the registry."""
+    candidates = get_eligible_production_candidates(
+        client=client,
+        validation_dataset_id=validation_dataset_id,
+        evaluation_protocol=evaluation_protocol,
+        evaluation_run_ids=evaluation_run_ids,
+    )
+
+    if not candidates:
+        raise RuntimeError(
+            "No eligible registered candidates found for the requested "
+            "validation dataset and evaluation protocol."
+        )
+
+    candidates.sort(
+        key=lambda candidate: (
+            candidate["metrics"]["mae"],
+            candidate["metrics"]["rmse"],
+            -candidate["metrics"]["r2"],
+            candidate["registered_model_name"],
+            -int(candidate["version"]),
+        )
+    )
+
+    selected = candidates[0].copy()
+    selected["eligible_candidate_count"] = len(candidates)
+    selected["selection_policy"] = GLOBAL_SELECTION_POLICY
+    return selected
+
+
+def compare_global_candidate_to_champion(
+    *,
+    client: Any,
+    selected_candidate: Mapping[str, Any],
+) -> ComparisonResult:
+    """Compare a selected candidate against the current global champion."""
+
+    try:
+        incumbent = client.get_model_version_by_alias(
+            GLOBAL_PRODUCTION_MODEL,
+            GLOBAL_CHAMPION_ALIAS,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "The global production champion alias is unavailable. "
+            "Refusing to promote without an incumbent."
+        ) from exc
+
+    if incumbent.status != "READY":
+        raise RuntimeError(
+            f"Global champion version {incumbent.version} is not READY."
+        )
+
+    incumbent_tags = incumbent.tags or {}
+
+    if incumbent_tags.get("registration_type") != "global_production":
+        raise RuntimeError(
+            "The current champion is not tagged as a global production model."
+        )
+
+    required_tags = (
+        "validation_dataset_id",
+        "evaluation_protocol",
+        "selected_mae",
+        "selected_rmse",
+        "selected_r2",
+    )
+
+    missing_tags = [
+        tag for tag in required_tags
+        if not incumbent_tags.get(tag)
+    ]
+
+    if missing_tags:
+        raise RuntimeError(
+            "The current global champion is missing required metadata: "
+            + ", ".join(missing_tags)
+        )
+
+    return compare_metrics(
+        candidate_metrics=selected_candidate["metrics"],
+        incumbent_metrics={
+            "mae": incumbent_tags["selected_mae"],
+            "rmse": incumbent_tags["selected_rmse"],
+            "r2": incumbent_tags["selected_r2"],
+        },
+        candidate_dataset_id=selected_candidate["validation_dataset_id"],
+        incumbent_dataset_id=incumbent_tags["validation_dataset_id"],
+        candidate_protocol=selected_candidate["evaluation_protocol"],
+        incumbent_protocol=incumbent_tags["evaluation_protocol"],
+    )
+
+
+
+def validate_global_model_version(
+    *,
+    client: Any,
+    version: str,
+    feature_sample: Any,
+    expected_feature_columns: list[str],
+) -> dict[str, Any]:
+    """Validate a global model's registry state, signature and inference."""
+
+    if not version:
+        raise ValueError("A global model version is required.")
+
+    if feature_sample is None or feature_sample.empty:
+        raise ValueError("Inference validation requires a non-empty feature sample.")
+
+    if not expected_feature_columns:
+        raise ValueError("Expected feature columns must be provided.")
+
+    actual_columns = list(feature_sample.columns)
+
+    if actual_columns != expected_feature_columns:
+        raise ValueError(
+            "Feature sample columns or order do not match the expected schema."
+        )
+
+    candidate = client.get_model_version(
+        name=GLOBAL_PRODUCTION_MODEL,
+        version=str(version),
+    )
+
+    if candidate.status != "READY":
+        raise RuntimeError(
+            f"Global model version {version} is not READY."
+        )
+
+    tags = candidate.tags or {}
+
+    if tags.get("registration_type") != "global_production":
+        raise RuntimeError(
+            "Model version is not registered as a global production model."
+        )
+
+    model_uri = f"models:/{GLOBAL_PRODUCTION_MODEL}/{version}"
+    model_info = mlflow.models.get_model_info(model_uri)
+    signature = model_info.signature
+
+    if signature is None or signature.inputs is None:
+        raise RuntimeError("Global model is missing an input signature.")
+
+    signature_columns = signature.inputs.input_names()
+
+    if signature_columns != expected_feature_columns:
+        raise RuntimeError(
+            "Model signature does not match the expected 27-feature schema."
+        )
+
+    model = mlflow.pyfunc.load_model(model_uri)
+    predictions = np.asarray(
+        model.predict(feature_sample)
+    ).reshape(-1)
+
+    if len(predictions) != len(feature_sample):
+        raise RuntimeError(
+            "Inference output row count does not match the input row count."
+        )
+
+    if not np.isfinite(predictions).all():
+        raise RuntimeError(
+            "Inference produced non-finite predictions."
+        )
+
+    return {
+        "model_name": GLOBAL_PRODUCTION_MODEL,
+        "version": str(version),
+        "model_uri": model_uri,
+        "feature_count": len(expected_feature_columns),
+        "inference_rows": len(feature_sample),
+        "prediction_count": len(predictions),
+        "signature_valid": True,
+        "inference_valid": True,
+    }
+
+
+def register_global_champion(
+    *,
+    client: Any,
+    selected_candidate: Mapping[str, Any],
+) -> Any:
+    """Register the selected source model version under the global model name."""
+    required_fields = (
+        "registered_model_name",
+        "version",
+        "run_id",
+        "validation_dataset_id",
+        "evaluation_protocol",
+        "metrics",
+    )
+
+    if any(not selected_candidate.get(field) for field in required_fields):
+        raise ValueError("Selected candidate is missing required metadata.")
+
+    source_name = str(selected_candidate["registered_model_name"])
+    source_version = str(selected_candidate["version"])
+    source = client.get_model_version(
+        name=source_name,
+        version=source_version,
+    )
+
+    if source.status != "READY":
+        raise RuntimeError("Selected source model version is not READY.")
+
+    source_tags = source.tags or {}
+
+    if (
+        source_tags.get("validation_dataset_id")
+        != selected_candidate["validation_dataset_id"]
+    ):
+        raise RuntimeError("Source model validation dataset does not match.")
+
+    if (
+        source_tags.get("evaluation_protocol")
+        != selected_candidate["evaluation_protocol"]
+    ):
+        raise RuntimeError("Source model evaluation protocol does not match.")
+
+    if (
+        source_tags.get("source_evaluation_run_id")
+        != selected_candidate["run_id"]
+    ):
+        raise RuntimeError("Source evaluation run does not match.")
+
+    existing_versions = client.search_model_versions(
+        f"name='{GLOBAL_PRODUCTION_MODEL}'"
+    )
+
+    for existing in existing_versions:
+        tags = existing.tags or {}
+        if (
+            tags.get("source_model_name") == source_name
+            and tags.get("source_model_version") == source_version
+            and tags.get("source_evaluation_run_id")
+            == selected_candidate["run_id"]
+        ):
+            return existing
+
+    try:
+        client.get_registered_model(GLOBAL_PRODUCTION_MODEL)
+    except MlflowException:
+        client.create_registered_model(GLOBAL_PRODUCTION_MODEL)
+
+    model_uri = source.source
+    if not model_uri:
+        raise RuntimeError("Selected source model has no model URI.")
+
+    create_kwargs = {
+        "name": GLOBAL_PRODUCTION_MODEL,
+        "source": model_uri,
+        "run_id": selected_candidate["run_id"],
+        "tags": {
+            "registration_type": "global_production",
+            "source_model_name": source_name,
+            "source_model_version": source_version,
+            "source_evaluation_run_id": selected_candidate["run_id"],
+            "validation_dataset_id": selected_candidate[
+                "validation_dataset_id"
+            ],
+            "evaluation_protocol": selected_candidate[
+                "evaluation_protocol"
+            ],
+            "selection_policy": GLOBAL_SELECTION_POLICY,
+            "selected_model_key": selected_candidate.get("model_key", ""),
+            "selected_mae": str(selected_candidate["metrics"]["mae"]),
+            "selected_rmse": str(selected_candidate["metrics"]["rmse"]),
+            "selected_r2": str(selected_candidate["metrics"]["r2"]),
+        },
+        "await_creation_for": 300,
+    }
+
+    if model_uri.startswith("models:/m-"):
+        create_kwargs["model_id"] = (
+            model_uri.removeprefix("models:/").split("/", 1)[0]
+        )
+
+    return client.create_model_version(**create_kwargs)
+
+
+def promote_global_champion(
+    *,
+    client: Any,
+    version: str,
+) -> Any:
+    """Assign and verify the global production champion alias."""
+    if not version:
+        raise ValueError("A global production model version is required.")
+
+    candidate = client.get_model_version(
+        name=GLOBAL_PRODUCTION_MODEL,
+        version=str(version),
+    )
+
+    if candidate.status != "READY":
+        raise RuntimeError(
+            f"Cannot promote global version {version}: "
+            f"status is {candidate.status}."
+        )
+
+    tags = candidate.tags or {}
+    if tags.get("registration_type") != "global_production":
+        raise RuntimeError(
+            "The requested version is not registered as a global production model."
+        )
+
+    client.set_registered_model_alias(
+        name=GLOBAL_PRODUCTION_MODEL,
+        alias=GLOBAL_CHAMPION_ALIAS,
+        version=str(version),
+    )
+
+    promoted = client.get_model_version_by_alias(
+        GLOBAL_PRODUCTION_MODEL,
+        GLOBAL_CHAMPION_ALIAS,
+    )
+
+    if (
+        promoted.name != GLOBAL_PRODUCTION_MODEL
+        or str(promoted.version) != str(version)
+        or promoted.status != "READY"
+    ):
+        raise RuntimeError("Global champion alias verification failed.")
 
     return promoted

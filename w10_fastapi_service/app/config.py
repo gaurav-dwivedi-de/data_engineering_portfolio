@@ -116,3 +116,33 @@ else:
 logging.info("Model metrics path: %s", MODEL_METRICS_PATH)
 logging.info("Feature file: %s", FEATURE_FILE)
 logging.info("Prediction file: %s", PREDICTION_FILE)
+
+FEATURE_COLUMNS = [
+    "temperature",
+    "humidity",
+    "windspeed",
+    "year",
+    "month",
+    "day",
+    "hour",
+    "day_of_week",
+    "week_of_year",
+    "day_of_year",
+    "is_weekend",
+    "temp_rolling_mean",
+    "humidity_rolling_mean",
+    "windspeed_rolling_mean",
+    "temp_lag_1",
+    "temp_lag_3",
+    "humidity_lag_1",
+    "windspeed_lag_1",
+    "temp_delta",
+    "humidity_delta",
+    "windspeed_delta",
+    "temp_pct_change",
+    "humidity_pct_change",
+    "windspeed_pct_change",
+    "city_London",
+    "city_Manchester",
+    "source_forecast",
+]

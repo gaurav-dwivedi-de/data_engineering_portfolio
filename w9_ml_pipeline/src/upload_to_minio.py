@@ -21,14 +21,24 @@ def connect_to_minio():
 
     print("Connecting to MinIO...")
 
+    protocol = "https" if MINIO_SECURE else "http"
+
+    endpoint = (
+        MINIO_ENDPOINT
+        .removeprefix("http://")
+        .removeprefix("https://")
+        .rstrip("/")
+    )
+
     s3 = boto3.client(
         "s3",
-        endpoint_url=f"http://{MINIO_ENDPOINT}",
+        endpoint_url=f"{protocol}://{endpoint}",
         aws_access_key_id=MINIO_ACCESS_KEY,
         aws_secret_access_key=MINIO_SECRET_KEY,
         use_ssl=MINIO_SECURE,
     )
 
+    print(f"MinIO endpoint: {protocol}://{endpoint}")
     print("Connected successfully.")
 
     return s3
@@ -40,7 +50,6 @@ def create_bucket_if_needed(s3):
     """
 
     try:
-
         s3.head_bucket(
             Bucket=MINIO_BUCKET_NAME
         )
@@ -49,17 +58,26 @@ def create_bucket_if_needed(s3):
             f"Bucket already exists: {MINIO_BUCKET_NAME}"
         )
 
-    except ClientError:
+    except ClientError as error:
 
-        print(
-            f"Creating bucket: {MINIO_BUCKET_NAME}"
-        )
+        error_code = error.response.get(
+            "Error", {}
+        ).get("Code")
 
-        s3.create_bucket(
-            Bucket=MINIO_BUCKET_NAME
-        )
+        if error_code in ("404", "NoSuchBucket"):
 
-        print("Bucket created successfully.")
+            print(
+                f"Creating bucket: {MINIO_BUCKET_NAME}"
+            )
+
+            s3.create_bucket(
+                Bucket=MINIO_BUCKET_NAME
+            )
+
+            print("Bucket created successfully.")
+
+        else:
+            raise
 
 
 def upload_file(

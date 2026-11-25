@@ -1,58 +1,35 @@
+
 from .load_model import load_model
 from .load_features import load_features
 from .predict import predict
 from .save_predictions import save_predictions
 from .evaluate_predictions import evaluate_predictions
 
-# from .upload_to_minio import upload_predictions
-# Uploading is handled separately by the Airflow pipeline.
-
 
 def main():
     """
-    Execute the complete Week 9 machine learning inference pipeline.
+    Execute the Week 9 MLflow production inference pipeline.
     """
 
     try:
+        print("\nLoading MLflow production champion...")
+        model, feature_columns = load_model()
 
-        # Load model and scaler
-        print("\nLoading trained model and scaler...")
-
-        model, scaler = load_model()
-
-        # Load features
         print("\nLoading feature dataset...")
-
         features_df = load_features()
 
-        # Generate predictions
         print("\nGenerating predictions...")
-
         prediction_df = predict(
             model,
-            scaler,
             features_df,
+            feature_columns,
         )
 
-        # Evaluate predictions
         print("\nEvaluating predictions...")
+        metrics = evaluate_predictions(prediction_df)
 
-        metrics = evaluate_predictions(
-            prediction_df,
-        )
-
-        # Save predictions
         print("\nSaving prediction files...")
-
-        save_predictions(
-            prediction_df,
-        )
-
-        # Upload handled by Airflow
-        # print("\nUploading prediction files to MinIO...")
-        # upload_predictions()
-
-        # Pipeline summary
+        save_predictions(prediction_df)
 
         print("\n" + "=" * 60)
         print("WEEK 9 PIPELINE SUMMARY")
@@ -64,19 +41,13 @@ def main():
         print(f"R²                 : {metrics['R2']:.2f}")
 
         print("\nFirst Five Predictions")
-
-        print(
-            prediction_df.head()
-        )
+        print(prediction_df.head())
 
         print("\nWeek 9 ML Pipeline completed successfully.")
 
     except Exception as error:
-
         print("\nPipeline failed.")
-
         print(error)
-
         raise
 
 

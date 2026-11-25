@@ -1,13 +1,12 @@
 import dash
 import plotly.graph_objects as go
-import json
 
 from dash import (
     Input,
     Output,
 )
 
-from app.config import MODEL_METRICS_PATH
+from dashboard.model_metadata import load_production_model_metadata
 from dashboard.api_client import request_prediction
 
 from dashboard.live_prediction_loader import (
@@ -61,16 +60,10 @@ PREDICTION_DATA = load_prediction_data()
 
 def load_model_metrics():
     """
-    Load model evaluation metrics generated
-    during Week 8 evaluation.
+    Load production model metadata from the MLflow registry.
     """
 
-    with open(
-        MODEL_METRICS_PATH,
-        "r",
-    ) as file:
-
-        return json.load(file)
+    return load_production_model_metadata()
 
 
 # ============================================================
@@ -522,13 +515,15 @@ def register_callbacks(app):
     )
     def update_model_information(_):
         """
-        Display model information from the latest
-        Week 8 evaluation.
+        Display metadata from the current MLflow production champion.
         """
 
         metrics = load_model_metrics()
 
-        model_name = metrics["model_name"]
+        model_name = (
+            f"{metrics['model_name']} · v{metrics['model_version']} "
+            f"({metrics['algorithm']})"
+        )
 
         r2_score = (
             f"{metrics['r2']:.2f}"
@@ -543,13 +538,11 @@ def register_callbacks(app):
         )
 
         dataset = (
-            f"{metrics['training_rows']:,} "
-            "engineered feature records"
+            f"{metrics['evaluation_rows']:,} "
+            "evaluation records"
         )
 
-        trained_at = (
-            metrics["trained_at"]
-        )
+        trained_at = metrics["evaluated_at"]
 
         return (
             model_name,

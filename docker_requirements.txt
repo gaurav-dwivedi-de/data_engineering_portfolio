@@ -1,5 +1,5 @@
 numpy
-pandas
+pandas==2.3.3
 requests
 psycopg2-binary
 pyspark

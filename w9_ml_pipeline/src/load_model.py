@@ -1,48 +1,41 @@
-import joblib
 
-from .config import (
-    BEST_MODEL_PATH,
-    SCALER_PATH,
-)
+import mlflow
+import mlflow.pyfunc
+
+from mlflow_integration.src.config import FEATURE_COLUMNS
+
+from .config import MLFLOW_TRACKING_URI, MODEL_URI
 
 
 def load_model():
     """
-    Load the trained machine learning model and scaler.
-
-    Returns
-    -------
-    tuple
-        (trained_model, fitted_scaler)
+    Load the global production champion from MLflow.
     """
 
-    # Check if the model exists
-    if not BEST_MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"Model file not found:\n{BEST_MODEL_PATH}"
+    if not MLFLOW_TRACKING_URI:
+        raise RuntimeError(
+            "MLFLOW_TRACKING_URI is not configured."
         )
 
-    # Check if the scaler exists
-    if not SCALER_PATH.exists():
-        raise FileNotFoundError(
-            f"Scaler file not found:\n{SCALER_PATH}"
+    if len(FEATURE_COLUMNS) != 27:
+        raise RuntimeError(
+            f"Expected 27 canonical features, found {len(FEATURE_COLUMNS)}."
         )
 
-    # Load the model
-    model = joblib.load(
-        BEST_MODEL_PATH
-    )
+    if len(set(FEATURE_COLUMNS)) != len(FEATURE_COLUMNS):
+        raise RuntimeError(
+            "Canonical feature configuration contains duplicate names."
+        )
 
-    # Load the scaler
-    scaler = joblib.load(
-        SCALER_PATH
-    )
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-    # Confirmation message
-    print("\nModel loaded successfully.")
-    print(f"Model path: {BEST_MODEL_PATH}")
+    print("\nLoading production champion from MLflow...")
+    print(f"Tracking URI: {MLFLOW_TRACKING_URI}")
+    print(f"Model URI: {MODEL_URI}")
 
-    print("\nScaler loaded successfully.")
-    print(f"Scaler path: {SCALER_PATH}")
+    model = mlflow.pyfunc.load_model(MODEL_URI)
 
-    return model, scaler
+    print("Production champion loaded successfully.")
+    print(f"Expected feature count: {len(FEATURE_COLUMNS)}")
+
+    return model, FEATURE_COLUMNS

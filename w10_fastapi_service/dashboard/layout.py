@@ -632,7 +632,7 @@ model_performance_section = html.Div(
     [
         section_header(
             "Model Performance",
-            "Latest model evaluation metrics",
+            "Current MLflow production champion",
         ),
 
         # ====================================================
@@ -706,7 +706,7 @@ model_performance_section = html.Div(
                 ),
 
                 html.Span(
-                    "  •  LAST TRAINED ",
+                    "  •  LAST EVALUATED ",
                     style={
                         "fontWeight": "700",
                         "marginLeft": "10px",

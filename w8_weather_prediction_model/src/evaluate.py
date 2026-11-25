@@ -17,8 +17,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import joblib
 
-from sklearn.model_selection import train_test_split
-
 from .config import (
     DATA_PATH,
     TARGET_COLUMN,
@@ -55,42 +53,96 @@ print("\nDataset Shape After Dropping Nulls:")
 print(df.shape)
 
 
-# PREPARE FEATURES & TARGET
-# Separate the input features from the target.
 
+# PREPARE CHRONOLOGICAL TRAIN / TEST DATA
+# Recreate the same chronological split used
+# during model training.
 
-X = df.drop(
+print("\nPreparing chronological train/test split...")
+
+df["time"] = pd.to_datetime(df["time"])
+
+df = df.sort_values(
+    "time"
+).reset_index(drop=True)
+
+# Get unique timestamps
+timestamps = (
+    df["time"]
+    .drop_duplicates()
+    .sort_values()
+    .reset_index(drop=True)
+)
+
+# Calculate split boundary
+split_index = int(
+    len(timestamps) * (1 - TEST_SIZE)
+)
+
+if split_index == 0 or split_index >= len(timestamps):
+    raise ValueError(
+        "Insufficient timestamps for chronological splitting."
+    )
+
+# Separate training and testing timestamps
+train_timestamps = timestamps.iloc[:split_index]
+test_timestamps = timestamps.iloc[split_index:]
+
+# Create training and testing datasets
+train_df = df[
+    df["time"].isin(train_timestamps)
+].copy()
+
+test_df = df[
+    df["time"].isin(test_timestamps)
+].copy()
+
+# Separate features and target
+X_train = train_df.drop(
     columns=[
         TARGET_COLUMN,
         "time"
     ]
 )
 
-y = df[TARGET_COLUMN]
-
-print("\nFeature Shape:")
-print(X.shape)
-
-print("Target Shape:")
-print(y.shape)
-
-
-# TRAIN / TEST SPLIT
-# Recreate the same train/test split used
-# during model training.
-
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=TEST_SIZE,
-    random_state=RANDOM_STATE
+X_test = test_df.drop(
+    columns=[
+        TARGET_COLUMN,
+        "time"
+    ]
 )
 
-print("\nTrain/Test Split Complete")
+y_test = test_df[TARGET_COLUMN]
+
+# Validate chronological separation
+if train_df["time"].max() >= test_df["time"].min():
+    raise ValueError(
+        "Chronological split validation failed."
+    )
+
+print("\nChronological Split Recreated")
+
+print("Training Period:")
+print(
+    train_df["time"].min(),
+    "to",
+    train_df["time"].max()
+)
+
+print("Testing Period:")
+print(
+    test_df["time"].min(),
+    "to",
+    test_df["time"].max()
+)
+
+print(f"\nTraining Rows: {len(train_df)}")
+print(f"Testing Rows : {len(test_df)}")
 
 print(f"X_train Shape: {X_train.shape}")
 print(f"X_test Shape : {X_test.shape}")
+print(f"y_test Shape : {y_test.shape}")
+
 
 
 # LOAD SCALER
