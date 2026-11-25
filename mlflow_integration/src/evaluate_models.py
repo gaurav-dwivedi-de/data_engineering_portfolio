@@ -735,6 +735,11 @@ def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
 
 def evaluate_spark_models(artifact_dirs: dict[str, Path]) -> list[dict]:
     from pyspark.ml.evaluation import RegressionEvaluator
+    from pyspark.ml.feature import StandardScalerModel
+    from pyspark.ml.regression import (
+        LinearRegressionModel,
+        RandomForestRegressionModel,
+    )
     from pyspark.sql import SparkSession
 
     spark = (

@@ -1,5 +1,4 @@
 numpy
-pandas==2.3.3
 requests
 psycopg2-binary
 pyspark
@@ -25,3 +24,4 @@ fastapi
 uvicorn
 
 mlflow==3.18.0
+pandas>=2.2.0,<3.0.0

@@ -399,20 +399,127 @@ with DAG(
     # MLflow Integration
     # =================================================
 
-    register_initial_baselines = BashOperator(
-        task_id="register_initial_baselines",
-        bash_command=(
-            "python "
-            "/opt/airflow/mlflow_integration/src/register_initial_models.py"
-        ),
-    )
+    ensure_initial_mlflow_baselines = BashOperator(
+    task_id="ensure_initial_mlflow_baselines",
+    bash_command="""
+        set -e
+
+        cd /opt/airflow/mlflow_integration
+
+        check_baselines() {
+            python - <<'PY'
+import sys
+
+sys.path.insert(0, "/opt/airflow/mlflow_integration/src")
+
+from config import MLFLOW_TRACKING_URI
+from register_initial_models import baselines_already_initialized
+from mlflow.tracking import MlflowClient
+
+client = MlflowClient(tracking_uri=MLFLOW_TRACKING_URI)
+
+try:
+    initialized = baselines_already_initialized(client)
+except Exception as exc:
+    print(f"MLflow baseline check failed: {exc}")
+    sys.exit(2)
+
+print(f"Initial MLflow baselines initialized: {initialized}")
+sys.exit(0 if initialized else 1)
+PY
+        }
+
+        check_baselines
+        result=$?
+
+        if [ "$result" -eq 0 ]; then
+            echo "Initial baselines are valid. Skipping bootstrap."
+        elif [ "$result" -eq 1 ]; then
+            echo "Initial baselines are missing or invalid."
+
+            python -m src.evaluate_models --log-mlflow
+
+            python /opt/airflow/mlflow_integration/src/register_initial_models.py
+
+            echo "Verifying baseline registration..."
+            check_baselines
+        else
+            echo "Unable to inspect MLflow registry. Stopping."
+            exit 1
+        fi
+    """,
+)
 
     run_mlflow_evaluation = PythonOperator(
         task_id="run_mlflow_evaluation",
         python_callable=run_mlflow_candidate_evaluation,
     )
 
-    # =================================================``
+    # =================================================
+    # MLflow — PRODUCTION CHAMPION VERIFICATION
+    # =================================================
+
+    verify_production_champion = BashOperator(
+        task_id="verify_production_champion",
+        bash_command="""
+            set -e
+
+            cd /opt/airflow/mlflow_integration
+
+            python - <<'PY'
+import mlflow
+from mlflow.tracking import MlflowClient
+
+from src.config import MLFLOW_TRACKING_URI
+from src.registration import (
+    GLOBAL_PRODUCTION_MODEL,
+    GLOBAL_CHAMPION_ALIAS,
+)
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+client = MlflowClient(
+    tracking_uri=MLFLOW_TRACKING_URI
+)
+
+print("[MLFLOW] Verifying global production model...")
+
+registered_model = client.get_registered_model(
+    GLOBAL_PRODUCTION_MODEL
+)
+
+champion = client.get_model_version_by_alias(
+    GLOBAL_PRODUCTION_MODEL,
+    GLOBAL_CHAMPION_ALIAS,
+)
+
+if champion.status != "READY":
+    raise RuntimeError(
+        f"Production champion is not READY: {champion.status}"
+    )
+
+tags = champion.tags or {}
+
+if tags.get("registration_type") != "global_production":
+    raise RuntimeError(
+        "The champion is not tagged as a global production model."
+    )
+
+if champion.name != GLOBAL_PRODUCTION_MODEL:
+    raise RuntimeError(
+        "The champion belongs to an unexpected registered model."
+    )
+
+print("[MLFLOW] Production champion verified.")
+print(f"[MLFLOW] Model: {registered_model.name}")
+print(f"[MLFLOW] Alias: {GLOBAL_CHAMPION_ALIAS}")
+print(f"[MLFLOW] Version: {champion.version}")
+print(f"[MLFLOW] Status: {champion.status}")
+PY
+        """,
+    )
+
+    # =================================================
     # CLOUD STORAGE
     # =================================================
 
@@ -474,13 +581,14 @@ with DAG(
         >> run_w5_pipeline
         >> run_w6_pipeline
         >> run_w7_pipeline
+        >> upload_artifacts_to_s3
+        >> ensure_initial_mlflow_baselines
         >> run_w8_pipeline
+        >> run_p2_w7_mllib_pipeline
+        >> run_mlflow_evaluation
+        >> verify_production_champion
         >> run_w9_pipeline
         >> upload_prediction_to_minio
-        >> run_p2_w7_mllib_pipeline
-        >> upload_artifacts_to_s3
-        >> register_initial_baselines
-        >> run_mlflow_evaluation
         >> refresh_applications_task
         >> end_task
     )
