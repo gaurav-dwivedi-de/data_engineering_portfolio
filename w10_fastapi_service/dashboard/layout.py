@@ -362,6 +362,8 @@ top_navigation = html.Div(
                 nav_item(
                     "MLflow",
                     "mdi:graph-outline",
+                    href="https://ml.weather-intelligence.workers.dev/mlflow/",
+                    external=True,
                 ),
 
                 # Architecture
