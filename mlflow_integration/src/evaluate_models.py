@@ -507,27 +507,9 @@ def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
 
     df[TIME_COLUMN] = pd.to_datetime(df[TIME_COLUMN])
 
-    # Reproduce W8 chronological timestamp split.
+    # Reproduce Spark boundary filtering before chronological splitting.
     df = df.sort_values(TIME_COLUMN).reset_index(drop=True)
 
-    timestamps = (
-        df[TIME_COLUMN]
-        .drop_duplicates()
-        .sort_values()
-        .reset_index(drop=True)
-    )
-
-    split_index = int(len(timestamps) * (1 - TEST_SIZE))
-
-    if split_index <= 0 or split_index >= len(timestamps):
-        raise ValueError(
-            "Insufficient timestamps for chronological splitting."
-        )
-
-    train_timestamps = timestamps.iloc[:split_index]
-    test_timestamps = timestamps.iloc[split_index:]
-
-    # Reproduce Spark boundary filtering.
     city_columns = [
         "city_London",
         "city_Manchester",
@@ -546,6 +528,24 @@ def evaluate_sklearn_candidates(candidate_run_id: str) -> dict:
     df = df.drop(
         columns=["_row_number", "_total_rows"]
     )
+
+    # Apply the chronological 80/20 split after boundary filtering.
+    timestamps = (
+        df[TIME_COLUMN]
+        .drop_duplicates()
+        .sort_values()
+        .reset_index(drop=True)
+    )
+
+    split_index = int(len(timestamps) * (1 - TEST_SIZE))
+
+    if split_index <= 0 or split_index >= len(timestamps):
+        raise ValueError(
+            "Insufficient timestamps for chronological splitting."
+        )
+
+    train_timestamps = timestamps.iloc[:split_index]
+    test_timestamps = timestamps.iloc[split_index:]
 
     train_df = df[
         df[TIME_COLUMN].isin(train_timestamps)
