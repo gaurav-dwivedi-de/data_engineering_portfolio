@@ -4,6 +4,12 @@ from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from mlflow.exceptions import MlflowException
+from mlflow.protos.databricks_pb2 import (
+    INTERNAL_ERROR,
+    RESOURCE_DOES_NOT_EXIST,
+)
+
 os.environ.setdefault("S3_BUCKET_NAME", "test-weather-bucket")
 os.environ.setdefault("AWS_REGION", "eu-west-2")
 
@@ -193,6 +199,62 @@ class TestGlobalPromotionWorkflow(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "non-finite"):
             self.run_workflow()
 
+        self.mock_promote.assert_not_called()
+
+    def test_missing_global_model_bootstraps_current_batch_champion(self):
+        self.client.get_registered_model.side_effect = MlflowException(
+            "Global production model does not exist.",
+            error_code=RESOURCE_DOES_NOT_EXIST,
+        )
+
+        result = self.run_workflow()
+
+        self.assertEqual(result["status"], "PROMOTED")
+        self.assertEqual(
+            result["comparison"]["reason"],
+            "Initial global champion bootstrap.",
+        )
+        self.mock_compare.assert_not_called()
+        self.mock_register.assert_called_once_with(
+            client=self.client,
+            selected_candidate=self.selected,
+        )
+        self.mock_validate.assert_called_once()
+        self.mock_promote.assert_called_once_with(
+            client=self.client,
+            version="2",
+        )
+
+    def test_existing_global_model_with_missing_alias_fails_closed(self):
+        self.client.get_registered_model.return_value = SimpleNamespace(
+            name=em.GLOBAL_PRODUCTION_MODEL,
+        )
+        self.mock_compare.side_effect = RuntimeError(
+            "Global champion alias is unavailable."
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "alias is unavailable"):
+            self.run_workflow()
+
+        self.mock_register.assert_not_called()
+        self.mock_validate.assert_not_called()
+        self.mock_promote.assert_not_called()
+
+    def test_mlflow_registry_error_is_not_treated_as_missing_model(self):
+        self.client.get_registered_model.side_effect = MlflowException(
+            "MLflow registry is unavailable.",
+            error_code=INTERNAL_ERROR,
+        )
+
+        with self.assertRaisesRegex(
+            MlflowException,
+            "registry is unavailable",
+        ):
+            self.run_workflow()
+
+        self.mock_compare.assert_not_called()
+        self.mock_register.assert_not_called()
+        self.mock_validate.assert_not_called()
         self.mock_promote.assert_not_called()
 
     def test_successful_validation_promotes_and_verifies_champion(self):

@@ -25,6 +25,7 @@ from sklearn.metrics import (
     r2_score,
 
 )
+from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 
 from .registration import (
@@ -1815,22 +1816,50 @@ def promote_global_champion_if_better(
         f"version {selected['version']}"
     )
 
-    comparison = compare_global_candidate_to_champion(
-        client=client,
-        selected_candidate=selected,
-    )
 
-    print(f"Global comparison: {comparison.to_dict()}")
+    # Check whether the global production model already exists.
+    try:
+        client.get_registered_model(GLOBAL_PRODUCTION_MODEL)
+        global_model_exists = True
 
-    if not comparison.accepted:
-        print(
-            "Global promotion rejected. "
-            "The existing champion alias remains unchanged."
+    except MlflowException as exc:
+        if exc.error_code != "RESOURCE_DOES_NOT_EXIST":
+            raise
+
+        global_model_exists = False
+
+    if global_model_exists:
+        print("[MLFLOW] Global production model exists. Comparing candidate.")
+
+        comparison = compare_global_candidate_to_champion(
+            client=client,
+            selected_candidate=selected,
         )
-        return {
-            "status": "NOT_PROMOTED",
-            "reason": "Candidate did not outperform the current champion.",
-            "comparison": comparison.to_dict(),
+
+        comparison_summary = comparison.to_dict()
+
+        print(f"Global comparison: {comparison_summary}")
+
+        if not comparison.accepted:
+            print(
+                "Global promotion rejected. "
+                "The existing champion alias remains unchanged."
+            )
+            return {
+                "status": "NOT_PROMOTED",
+                "reason": "Candidate did not outperform the current champion.",
+                "comparison": comparison_summary,
+            }
+
+    else:
+        print(
+            "[MLFLOW] Global production model does not exist. "
+            "Initialising it from the best eligible current-batch candidate."
+        )
+
+        comparison_summary = {
+            "accepted": True,
+            "reason": "Initial global champion bootstrap.",
         }
 
     print("\nRegistering global production candidate...")
@@ -1892,7 +1921,7 @@ def promote_global_champion_if_better(
     return {
         "status": "PROMOTED",
         "version": version_id,
-        "comparison": comparison.to_dict(),
+        "comparison": comparison_summary,
         "validation": validation,
     }
 
