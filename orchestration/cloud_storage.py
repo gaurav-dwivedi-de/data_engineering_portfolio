@@ -541,7 +541,12 @@ def upload_spark_candidate(candidate_run_id: str):
 
 
 def upload_p2_w7_artifacts():
-    """Upload P2-W7 processed data, figures and models to S3."""
+    """Upload P2-W7 processed data, figures and production models to S3."""
+
+    if not P2_W7_ROOT.is_dir():
+        raise FileNotFoundError(
+            f"P2-W7 project directory not found: {P2_W7_ROOT}"
+        )
 
     directories = {
         "data/processed": P2_W7_ROOT / "data" / "processed",
@@ -549,30 +554,11 @@ def upload_p2_w7_artifacts():
         "models": P2_W7_ROOT / "models",
     }
 
-    if not P2_W7_ROOT.is_dir():
-        raise FileNotFoundError(
-            f"P2-W7 project directory not found: {P2_W7_ROOT}"
-        )
-
-    
     required_spark_baselines = {
         "mllib_linear_regression",
         "mllib_linear_regression_scaler",
         "mllib_random_forest",
     }
-
-    models_dir = P2_W7_ROOT / "models"
-
-    if not models_dir.is_dir():
-        raise FileNotFoundError(
-            f"P2-W7 models directory not found: {models_dir}"
-        )
-
-    for model_name in sorted(required_spark_baselines):
-        validate_spark_model_directory(
-            models_dir / model_name
-        )
-
 
     for relative_path, directory in directories.items():
         if not directory.is_dir():
@@ -589,7 +575,7 @@ def upload_p2_w7_artifacts():
             )
 
         if relative_path == "figures" and not any(
-            path.is_file()
+            path.is_file() and path.stat().st_size > 0
             for path in directory.rglob("*")
         ):
             logger.info(
@@ -606,7 +592,6 @@ def upload_p2_w7_artifacts():
             )
             continue
 
-
         for model_dir in sorted(directory.iterdir()):
             if model_dir.name == "candidates":
                 logger.info(
@@ -616,7 +601,7 @@ def upload_p2_w7_artifacts():
                 continue
 
             if not model_dir.is_dir():
-                if model_dir.is_file():
+                if model_dir.is_file() and model_dir.stat().st_size > 0:
                     upload_file(
                         model_dir,
                         f"{MLLIB_S3_PREFIX.rstrip('/')}/models/"
@@ -625,7 +610,27 @@ def upload_p2_w7_artifacts():
                     )
                 continue
 
-            
+            model_files = [
+                path
+                for path in model_dir.rglob("*")
+                if (
+                    path.is_file()
+                    and path.stat().st_size > 0
+                    and path.name != "_SUCCESS"
+                    and not path.name.endswith(".crc")
+                )
+            ]
+
+            if not model_files:
+                logger.info(
+                    "Skipping empty P2-W7 model directory: %s",
+                    model_dir,
+                )
+                continue
+
+            if model_dir.name in required_spark_baselines:
+                validate_spark_model_directory(model_dir)
+
             model_s3_prefix = (
                 f"{MLLIB_S3_PREFIX.rstrip('/')}/models/"
                 f"{model_dir.name}"
@@ -638,10 +643,7 @@ def upload_p2_w7_artifacts():
             )
 
             if model_dir.name in required_spark_baselines:
-                verify_s3_spark_model_directory(
-                    model_s3_prefix
-                )
-
+                verify_s3_spark_model_directory(model_s3_prefix)
 
     logger.info(
         "P2-W7 artifacts uploaded to s3://%s/%s",

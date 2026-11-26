@@ -17,18 +17,18 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 from src.config import (
-    EVALUATION_OUTPUT_PATH,
-    LINEAR_REGRESSION_MODEL_PATH,
-    MLLIB_CLEAN_PATH,
-    MLLIB_FEATURES_PATH,
-    MLLIB_INPUT_PATH,
-    MLLIB_TEST_PATH,
-    MLLIB_TRAIN_PATH,
-    PREDICTIONS_OUTPUT_PATH,
-    RANDOM_FOREST_MODEL_PATH,
+    CANDIDATE_CLEAN_PATH,
+    CANDIDATE_EVALUATION_OUTPUT_PATH,
+    CANDIDATE_FEATURES_PATH,
+    CANDIDATE_INPUT_PATH,
+    CANDIDATE_LINEAR_REGRESSION_MODEL_PATH,
+    CANDIDATE_PREDICTIONS_OUTPUT_PATH,
+    CANDIDATE_RANDOM_FOREST_MODEL_PATH,
+    CANDIDATE_RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH,
+    CANDIDATE_SCALER_MODEL_PATH,
+    CANDIDATE_TEST_PATH,
+    CANDIDATE_TRAIN_PATH,
 )
-from src.evaluate import RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH
-from src.train_linear_regression import SCALER_MODEL_PATH
 
 
 @pytest.fixture(scope="session")
@@ -48,17 +48,17 @@ def spark():
 
 def test_required_artifacts_exist():
     required_paths = [
-        MLLIB_INPUT_PATH,
-        MLLIB_CLEAN_PATH,
-        MLLIB_FEATURES_PATH,
-        MLLIB_TRAIN_PATH,
-        MLLIB_TEST_PATH,
-        PREDICTIONS_OUTPUT_PATH,
-        RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH,
-        EVALUATION_OUTPUT_PATH,
-        LINEAR_REGRESSION_MODEL_PATH,
-        RANDOM_FOREST_MODEL_PATH,
-        SCALER_MODEL_PATH,
+        CANDIDATE_INPUT_PATH,
+        CANDIDATE_CLEAN_PATH,
+        CANDIDATE_FEATURES_PATH,
+        CANDIDATE_TRAIN_PATH,
+        CANDIDATE_TEST_PATH,
+        CANDIDATE_PREDICTIONS_OUTPUT_PATH,
+        CANDIDATE_RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH,
+        CANDIDATE_EVALUATION_OUTPUT_PATH,
+        CANDIDATE_LINEAR_REGRESSION_MODEL_PATH,
+        CANDIDATE_RANDOM_FOREST_MODEL_PATH,
+        CANDIDATE_SCALER_MODEL_PATH,
     ]
 
     for path in required_paths:
@@ -66,7 +66,7 @@ def test_required_artifacts_exist():
 
 
 def test_mllib_feature_dataset_schema(spark):
-    df = spark.read.parquet(str(MLLIB_FEATURES_PATH))
+    df = spark.read.parquet(str(CANDIDATE_FEATURES_PATH))
 
     assert "time" in df.columns
     assert "features" in df.columns
@@ -79,7 +79,7 @@ def test_mllib_feature_dataset_schema(spark):
 
 
 def test_mllib_feature_dataset_has_valid_values(spark):
-    df = spark.read.parquet(str(MLLIB_FEATURES_PATH))
+    df = spark.read.parquet(str(CANDIDATE_FEATURES_PATH))
 
     invalid_rows = df.filter(
         F.col("time").isNull()
@@ -91,24 +91,24 @@ def test_mllib_feature_dataset_has_valid_values(spark):
 
 
 def test_clean_dataset_is_smaller_than_input(spark):
-    input_rows = spark.read.parquet(str(MLLIB_INPUT_PATH)).count()
-    clean_rows = spark.read.parquet(str(MLLIB_CLEAN_PATH)).count()
+    input_rows = spark.read.parquet(str(CANDIDATE_INPUT_PATH)).count()
+    clean_rows = spark.read.parquet(str(CANDIDATE_CLEAN_PATH)).count()
 
     assert clean_rows < input_rows
     assert clean_rows > 0
 
 
 def test_train_test_datasets_are_non_empty(spark):
-    train_rows = spark.read.parquet(str(MLLIB_TRAIN_PATH)).count()
-    test_rows = spark.read.parquet(str(MLLIB_TEST_PATH)).count()
+    train_rows = spark.read.parquet(str(CANDIDATE_TRAIN_PATH)).count()
+    test_rows = spark.read.parquet(str(CANDIDATE_TEST_PATH)).count()
 
     assert train_rows > 0
     assert test_rows > 0
 
 
 def test_train_test_periods_do_not_overlap(spark):
-    train_df = spark.read.parquet(str(MLLIB_TRAIN_PATH))
-    test_df = spark.read.parquet(str(MLLIB_TEST_PATH))
+    train_df = spark.read.parquet(str(CANDIDATE_TRAIN_PATH))
+    test_df = spark.read.parquet(str(CANDIDATE_TEST_PATH))
 
     train_max = train_df.select(F.max("time")).first()[0]
     test_min = test_df.select(F.min("time")).first()[0]
@@ -117,16 +117,16 @@ def test_train_test_periods_do_not_overlap(spark):
 
 
 def test_train_test_rows_match_feature_dataset(spark):
-    feature_rows = spark.read.parquet(str(MLLIB_FEATURES_PATH)).count()
-    train_rows = spark.read.parquet(str(MLLIB_TRAIN_PATH)).count()
-    test_rows = spark.read.parquet(str(MLLIB_TEST_PATH)).count()
+    feature_rows = spark.read.parquet(str(CANDIDATE_FEATURES_PATH)).count()
+    train_rows = spark.read.parquet(str(CANDIDATE_TRAIN_PATH)).count()
+    test_rows = spark.read.parquet(str(CANDIDATE_TEST_PATH)).count()
 
     assert train_rows + test_rows == feature_rows
 
 
 def test_linear_regression_model_loads(spark):
     model = LinearRegressionModel.load(
-        str(LINEAR_REGRESSION_MODEL_PATH)
+        str(CANDIDATE_LINEAR_REGRESSION_MODEL_PATH)
     )
 
     assert model is not None
@@ -134,7 +134,7 @@ def test_linear_regression_model_loads(spark):
 
 def test_random_forest_model_loads(spark):
     model = RandomForestRegressionModel.load(
-        str(RANDOM_FOREST_MODEL_PATH)
+        str(CANDIDATE_RANDOM_FOREST_MODEL_PATH)
     )
 
     assert model is not None
@@ -142,7 +142,7 @@ def test_random_forest_model_loads(spark):
 
 
 def test_evaluation_contains_both_models():
-    with open(EVALUATION_OUTPUT_PATH, "r", encoding="utf-8") as file:
+    with open(CANDIDATE_EVALUATION_OUTPUT_PATH, "r", encoding="utf-8") as file:
         evaluation = json.load(file)
 
     assert evaluation["framework"] == "Spark MLlib"
@@ -162,14 +162,14 @@ def test_evaluation_contains_both_models():
 
 
 def test_prediction_row_counts_match_test_dataset(spark):
-    test_rows = spark.read.parquet(str(MLLIB_TEST_PATH)).count()
+    test_rows = spark.read.parquet(str(CANDIDATE_TEST_PATH)).count()
 
     lr_prediction_rows = spark.read.parquet(
-        str(PREDICTIONS_OUTPUT_PATH)
+        str(CANDIDATE_PREDICTIONS_OUTPUT_PATH)
     ).count()
 
     rf_prediction_rows = spark.read.parquet(
-        str(RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH)
+        str(CANDIDATE_RANDOM_FOREST_PREDICTIONS_OUTPUT_PATH)
     ).count()
 
     assert lr_prediction_rows == test_rows

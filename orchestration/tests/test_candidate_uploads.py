@@ -226,7 +226,15 @@ def test_production_upload_skips_candidate_models(
     create_file(
         models_dir
         / "mllib_linear_regression"
-        / "model.txt"
+        / "data"
+        / "part-00000"
+    )
+
+    create_file(
+        models_dir
+        / "mllib_linear_regression"
+        / "metadata"
+        / "part-00000"
     )
 
     monkeypatch.setattr(
@@ -256,7 +264,30 @@ def test_production_upload_skips_candidate_models(
         lambda *args, **kwargs: None,
     )
 
+    monkeypatch.setattr(
+        cloud_storage,
+        "verify_s3_spark_model_directory",
+        lambda *args, **kwargs: None,
+    )
+
     cloud_storage.upload_p2_w7_artifacts()
+
+    expected_prefix = cloud_storage.MLLIB_S3_PREFIX.rstrip("/")
+
+    assert (
+        f"{expected_prefix}/data/processed"
+        in uploaded_prefixes
+    )
+
+    assert (
+        f"{expected_prefix}/models/mllib_linear_regression"
+        in uploaded_prefixes
+    )
+
+    assert not any(
+        "/candidates/" in prefix
+        for prefix in uploaded_prefixes
+    )
 
     assert not any(
         "/candidates" in prefix
