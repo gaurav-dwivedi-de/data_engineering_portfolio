@@ -70,10 +70,19 @@ sed "s|IMAGE_TAG|${IMAGE_TAG}|g" "$REPO/k8/fastapi/deployment.yaml" \
 "${KUBECTL[@]}" apply -f "$REPO/k8/fastapi/service.yaml"
 "${KUBECTL[@]}" rollout status deployment/fastapi-deployment --timeout=180s
 
-echo "6. Deploying Dashboard..."
-sed "s|IMAGE_TAG|${IMAGE_TAG}|g" "$REPO/k8/dashboard/deployment.yaml" \
-  | "${KUBECTL[@]}" apply -f -
+echo "6. Deploying Dashboard with Oracle configuration..."
+
+"${KUBECTL[@]}" kustomize \
+  --load-restrictor LoadRestrictionsNone \
+  "$REPO/k8/dashboard/overlays/oracle" \
+  | sed "s|IMAGE_TAG|${IMAGE_TAG}|g" \
+  > /tmp/dashboard-deployment-rendered.yaml
+
+echo "Applying Oracle Dashboard manifest..."
+
+"${KUBECTL[@]}" apply -f /tmp/dashboard-deployment-rendered.yaml
 "${KUBECTL[@]}" apply -f "$REPO/k8/dashboard/service.yaml"
+
 "${KUBECTL[@]}" rollout status deployment/prediction-dashboard-deployment --timeout=180s
 
 

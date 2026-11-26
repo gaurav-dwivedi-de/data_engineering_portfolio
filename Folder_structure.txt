@@ -67,6 +67,7 @@
 │   ├── mlflow
 │   │   ├── README.md
 │   │   ├── deployment.yaml
+│   │   ├── overlays
 │   │   └── service.yaml
 │   └── postgres
 │       ├── README.md
@@ -83,17 +84,25 @@
 │   ├── results
 │   │   ├── p2_w8_evaluation.csv
 │   │   └── p2_w8_evaluation.json
-│   └── src
-│       ├── __init__.py
-│       ├── config.py
-│       ├── evaluate_models.py
-│       ├── register_initial_models.py
-│       ├── registration.py
-│       └── tests
+│   ├── src
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── evaluate_models.py
+│   │   ├── evaluate_models.py.before_global_promotion.bak
+│   │   ├── register_initial_models.py
+│   │   ├── register_production_model.py
+│   │   ├── registration.py
+│   │   ├── registration.py.bak
+│   │   ├── registration.py.before_global_champion.bak
+│   │   ├── registration.py.before_model_validation.bak
+│   │   └── tests
+│   └── task.md
 ├── orchestration
 │   ├── __init__.py
 │   ├── check_archive.py
 │   ├── cloud_storage.py
+│   ├── cloud_storage.py.backup
+│   ├── cloud_storage.py.bak
 │   ├── cloud_storage_manual.py
 │   ├── config.py
 │   ├── create_db.py
@@ -149,9 +158,11 @@
 │   ├── README.md
 │   ├── app
 │   │   ├── config.py
+│   │   ├── config.py.bak
 │   │   ├── main.py
 │   │   ├── model_loader.py
 │   │   ├── predictor.py
+│   │   ├── predictor.py.bak
 │   │   ├── routes.py
 │   │   └── schemas.py
 │   ├── dashboard
@@ -162,6 +173,7 @@
 │   │   ├── callbacks.py
 │   │   ├── layout.py
 │   │   ├── live_prediction_loader.py
+│   │   ├── model_metadata.py
 │   │   ├── prediction_loader.py
 │   │   └── styles.py
 │   └── tests
@@ -309,4 +321,4 @@
 │       └── figures
 └── workflow.md
 
-101 directories, 209 files
+102 directories, 220 files

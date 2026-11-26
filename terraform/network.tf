@@ -104,7 +104,7 @@ resource "oci_core_default_security_list" "weather_platform_security_list" {
 
   ingress_security_rules {
     protocol    = "6"
-    source      = "148.252.133.137/32"
+    source      = "185.69.144.57/32"
     stateless   = false
     description = "MLflow Tracking UI - restricted access"
 
