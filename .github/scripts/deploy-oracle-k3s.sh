@@ -76,11 +76,15 @@ sed "s|IMAGE_TAG|${IMAGE_TAG}|g" "$REPO/k8/dashboard/deployment.yaml" \
 "${KUBECTL[@]}" apply -f "$REPO/k8/dashboard/service.yaml"
 "${KUBECTL[@]}" rollout status deployment/prediction-dashboard-deployment --timeout=180s
 
-echo "7. Deploying MLflow..."
-echo "Manifest: $REPO/k8/mlflow/deployment.yaml"
+
+echo "7. Deploying MLflow with Oracle overlay..."
+echo "Overlay: $REPO/k8/mlflow/overlays/oracle"
 echo "Image tag: $IMAGE_TAG"
 
-sed "s|IMAGE_TAG|${IMAGE_TAG}|g" "$REPO/k8/mlflow/deployment.yaml" \
+"${KUBECTL[@]}" kustomize \
+  --load-restrictor LoadRestrictionsNone \
+  "$REPO/k8/mlflow/overlays/oracle" \
+  | sed "s|IMAGE_TAG|${IMAGE_TAG}|g" \
   > /tmp/mlflow-deployment-rendered.yaml
 
 echo "Rendered MLflow manifest:"
@@ -89,6 +93,7 @@ nl -ba /tmp/mlflow-deployment-rendered.yaml
 "${KUBECTL[@]}" apply -f /tmp/mlflow-deployment-rendered.yaml
 "${KUBECTL[@]}" apply -f "$REPO/k8/mlflow/service.yaml"
 "${KUBECTL[@]}" rollout status deployment/mlflow-tracking --timeout=180s
+
 
 echo "8. Applying Kubernetes Ingress..."
 "${KUBECTL[@]}" apply -f "$REPO/k8/ingress.yaml"

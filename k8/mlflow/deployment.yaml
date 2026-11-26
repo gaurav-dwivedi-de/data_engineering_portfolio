@@ -27,6 +27,8 @@ spec:
           env:
             - name: MLFLOW_SERVER_ENABLE_JOB_EXECUTION
               value: "false"
+            - name: MLFLOW_STATIC_PREFIX
+              value: ""
             - name: MLFLOW_SERVER_ALLOWED_HOSTS
               value: "mlflow-tracking-service,mlflow-tracking-service:5000,localhost,localhost:30500,localhost:5000,140.238.98.211:30500"
             - name: MLFLOW_SERVER_CORS_ALLOWED_ORIGINS
@@ -40,10 +42,17 @@ spec:
             - -c
           args:
             - |
+              STATIC_PREFIX_ARGS=""
+
+              if [ -n "${MLFLOW_STATIC_PREFIX}" ]; then
+                STATIC_PREFIX_ARGS="--static-prefix ${MLFLOW_STATIC_PREFIX}"
+              fi
+
               exec mlflow server \
                 --host 0.0.0.0 \
                 --port 5000 \
                 --workers 1 \
+                ${STATIC_PREFIX_ARGS} \
                 --backend-store-uri "postgresql+psycopg2://${MLFLOW_DB_USER}:${MLFLOW_DB_PASSWORD}@${MLFLOW_DB_HOST}:${MLFLOW_DB_PORT}/${MLFLOW_DB_NAME}" \
                 --artifacts-destination "s3://${S3_BUCKET_NAME}/${MLFLOW_S3_PREFIX}/" \
                 --serve-artifacts

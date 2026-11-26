@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-tracking
+spec:
+  template:
+    spec:
+      containers:
+        - name: mlflow-tracking
+          env:
+            - name: MLFLOW_STATIC_PREFIX
+              value: "/mlflow"
+            - name: MLFLOW_SERVER_ALLOWED_HOSTS
+              value: "mlflow-tracking-service,mlflow-tracking-service:5000,localhost,localhost:30500,localhost:5000,140.238.98.211:30500,ml.weather-intelligence.workers.dev"
+            - name: MLFLOW_SERVER_CORS_ALLOWED_ORIGINS
+              value: "http://140.238.98.211:30500,https://ml.weather-intelligence.workers.dev"
