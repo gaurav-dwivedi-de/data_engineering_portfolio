@@ -64,10 +64,19 @@ done
 "${KUBECTL[@]}" rollout status deployment/airflow-scheduler --timeout=180s
 "${KUBECTL[@]}" rollout status deployment/airflow-dag-processor --timeout=180s
 
-echo "5. Deploying FastAPI..."
-sed "s|IMAGE_TAG|${IMAGE_TAG}|g" "$REPO/k8/fastapi/deployment.yaml" \
-  | "${KUBECTL[@]}" apply -f -
+echo "5. Deploying FastAPI with Oracle configuration..."
+
+"${KUBECTL[@]}" kustomize \
+  --load-restrictor LoadRestrictionsNone \
+  "$REPO/k8/fastapi/overlays/oracle" \
+  | sed "s|IMAGE_TAG|${IMAGE_TAG}|g" \
+  > /tmp/fastapi-deployment-rendered.yaml
+
+echo "Applying Oracle FastAPI manifest..."
+
+"${KUBECTL[@]}" apply -f /tmp/fastapi-deployment-rendered.yaml
 "${KUBECTL[@]}" apply -f "$REPO/k8/fastapi/service.yaml"
+
 "${KUBECTL[@]}" rollout status deployment/fastapi-deployment --timeout=180s
 
 echo "6. Deploying Dashboard with Oracle configuration..."

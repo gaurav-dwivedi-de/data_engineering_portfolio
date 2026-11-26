@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-deployment
+spec:
+  template:
+    spec:
+      containers:
+        - name: fastapi
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow-tracking-service:5000/mlflow"
