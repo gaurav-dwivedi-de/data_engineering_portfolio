@@ -38,8 +38,10 @@ spec:
               value: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
               value: "postgresql+psycopg2://airflow:airflow@postgres:5432/airflow"
+            - name: AIRFLOW__API__BASE_URL
+              value: "https://ml.weather-intelligence.workers.dev/airflow"
             - name: AIRFLOW__CORE__EXECUTION_API_SERVER_URL
-              value: "http://airflow-apiserver:8080/execution/"
+              value: "http://airflow-apiserver:8080/airflow/execution/"
             - name: AIRFLOW__CORE__LOAD_EXAMPLES
               value: "false"
             - name: AIRFLOW__CORE__FERNET_KEY
@@ -72,7 +74,7 @@ spec:
               value: "/opt/airflow"
           readinessProbe:
             httpGet:
-              path: /api/v2/monitor/health
+              path: /airflow/api/v2/monitor/health
               port: 8080
             initialDelaySeconds: 20
             periodSeconds: 10
@@ -80,7 +82,7 @@ spec:
             failureThreshold: 12
           livenessProbe:
             httpGet:
-              path: /api/v2/monitor/health
+              path: /airflow/api/v2/monitor/health
               port: 8080
             initialDelaySeconds: 60
             periodSeconds: 20
