@@ -1,0 +1,16 @@
+{
+    "model_name": "Linear Regression",
+    "r2": 0.9928,
+    "rmse": 0.5124,
+    "mae": 0.3713,
+    "training_rows": 40146,
+    "testing_rows": 10038,
+    "evaluation_protocol": "chronological_train_test_split",
+    "test_size": 0.2,
+    "random_state": null,
+    "training_start": "2025-01-01 00:00:00",
+    "training_end": "2026-07-12 13:00:00",
+    "testing_start": "2026-07-12 14:00:00",
+    "testing_end": "2026-11-28 23:00:00",
+    "trained_at": "28 Nov 2026 10:38"
+}

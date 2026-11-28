@@ -36,8 +36,18 @@ spec:
               value: "airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager"
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
               value: "postgresql+psycopg2://airflow:airflow@postgres:5432/airflow"
+            - name: AIRFLOW__LOGGING__REMOTE_LOGGING
+              value: "True"
+            - name: AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER
+              value: "s3://weather-data-lake-mlops/airflow-logs/"
+            - name: AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID
+              value: "aws_default"
+            - name: AIRFLOW__LOGGING__DELETE_LOCAL_LOGS
+              value: "False"
+            - name: AIRFLOW_CONN_AWS_DEFAULT
+              value: "aws://@/?region_name=eu-west-2"
             - name: AIRFLOW__CORE__EXECUTION_API_SERVER_URL
-              value: "http://airflow-apiserver:8080/execution/"
+              value: "http://airflow-apiserver:8080/airflow/execution/"
             - name: AIRFLOW__CORE__LOAD_EXAMPLES
               value: "false"
             - name: AIRFLOW__CORE__FERNET_KEY

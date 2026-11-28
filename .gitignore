@@ -229,3 +229,5 @@ p2_w7_spark_mllib/models/**/metadata/
 mlflow.db
 # Generated Spark MLlib metadata files
 mlflow_integration/artifacts/source/spark_mllib/**/metadata/
+/P2_w7_spark_mllib/data
+/P2_w7_spark_mllib/data
