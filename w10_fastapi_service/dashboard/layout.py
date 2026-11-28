@@ -356,6 +356,7 @@ top_navigation = html.Div(
                     "Airflow",
                     "simple-icons:apacheairflow",
                     href=AIRFLOW_URL,
+                    external=True,
                 ),
 
                 # MLflow

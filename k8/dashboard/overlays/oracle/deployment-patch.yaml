@@ -10,3 +10,5 @@ spec:
           env:
             - name: MLFLOW_TRACKING_URI
               value: "http://mlflow-tracking-service:5000/mlflow"
+            - name: AIRFLOW_URL
+              value: "https://ml.weather-intelligence.workers.dev/airflow/"
